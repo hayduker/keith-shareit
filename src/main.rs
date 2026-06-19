@@ -30,12 +30,10 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    let secret_key = find_or_create_secret_key("endpoint.key")?;
+    let _secret_key = find_or_create_secret_key("endpoint.key")?;
 
     let endpoint = Endpoint::builder(presets::N0)
-        .secret_key(secret_key)
+        // .secret_key(secret_key)
         .bind()
         .await?;
 
@@ -45,6 +43,7 @@ async fn main() -> Result<()> {
     let store = MemStore::new();
     let blobs = BlobsProtocol::new(&store, None);
 
+    let cli = Cli::parse();
     match cli.command {
         Commands::Send { filename } => {
             println!("Preparing to send {}", filename.display());
@@ -56,8 +55,36 @@ async fn main() -> Result<()> {
             let ticket = BlobTicket::new(endpoint_id.into(), tag.hash, tag.format);
             println!("File hashed. Fetch the file by running:");
             println!("cargo run -- receive {ticket} {}", filename.display());
+
+            let router = Router::builder(endpoint)
+                .accept(iroh_blobs::ALPN, blobs)
+                .spawn();
+
+            tokio::signal::ctrl_c().await?;
+
+            println!("\nShutting down.");
+            router.shutdown().await?;
         }
-        Commands::Receive { ticket, filename } => {}
+        Commands::Receive { ticket, filename } => {
+            println!("Preparing to download {}", filename.display());
+            let abs_path = std::path::absolute(&filename)?;
+            let ticket: BlobTicket = ticket.parse()?;
+            let downloader = store.downloader(&endpoint);
+
+            println!("Starting download.");
+            downloader
+                .download(ticket.hash(), Some(ticket.addr().id))
+                .await?;
+
+            println!("Finished download. Copying to destination.");
+
+            store.blobs().export(ticket.hash(), abs_path).await?;
+
+            println!("Finished copying.");
+
+            println!("Shutting down.");
+            endpoint.close().await;
+        }
     }
 
     Ok(())
