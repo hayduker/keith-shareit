@@ -1,31 +1,36 @@
 use clap::Parser;
 
 use crate::{
+    app::App,
     cli::{Args, Commands},
     provider::send,
     requester::receive,
 };
 
+mod app;
 mod cli;
 mod provider;
 mod requester;
 mod secret;
+mod ui;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+    ratatui::run(|terminal| App::new().run(terminal))
 
-    let result = match args.command {
-        Commands::Send(args) => send(args.path).await,
-        Commands::Receive(args) => receive(args.ticket).await,
-    };
+    // let args = Args::parse();
 
-    if let Err(e) = &result {
-        eprintln!("{e}");
-    }
+    // let result = match args.command {
+    //     Commands::Send(args) => send(args.path).await,
+    //     Commands::Receive(args) => receive(args.ticket).await,
+    // };
 
-    match result {
-        Ok(()) => std::process::exit(0),
-        Err(_) => std::process::exit(1),
-    }
+    // if let Err(e) = &result {
+    //     eprintln!("{e}");
+    // }
+
+    // match result {
+    //     Ok(()) => std::process::exit(0),
+    //     Err(_) => std::process::exit(1),
+    // }
 }

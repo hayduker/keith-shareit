@@ -13,5 +13,7 @@ iroh-blobs = "0.103.0"
 n0-future = "0.3.2"
 num_cpus = "1.17.0"
 rand = "0.10.1"
+ratatui = "0.30.2"
 tokio = { version = "1.52.3", features = ["signal"] }
+tui-tree-widget = "0.24.0"
 walkdir = "2.5.0"
