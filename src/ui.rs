@@ -1,4 +1,5 @@
 use ratatui::{
+    Frame,
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style, Stylize},
@@ -11,8 +12,8 @@ use walkdir::WalkDir;
 
 use crate::app::App;
 
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl App {
+    pub fn render(&mut self, frame: &mut Frame) {
         let title = Line::from(" Library ".bold());
         let top_instructions = Line::from(vec![" Quit ".into(), "<q> ".blue().bold()]);
         let bottom_instructions =
@@ -23,16 +24,23 @@ impl Widget for &App {
             .title_bottom(bottom_instructions.right_aligned())
             .border_set(border::THICK);
 
-        let root_path = String::from("/home/derek/smallmusic");
+        let root_path = String::from("/home/derek/newmusic");
         let mut root_item = TreeItem::new_leaf((String::new(), false), root_path.clone());
 
-        for entry in WalkDir::new(root_path.clone()) {
+        for entry in WalkDir::new(root_path.clone()).sort_by_file_name() {
             if entry.is_err() {
                 eprintln!("error with entry: {:?}", entry);
                 continue;
             }
+            let entry = entry.unwrap();
 
-            let file = match entry.unwrap().path().to_str() {
+            let short_path = entry.path().strip_prefix(root_path.clone());
+            if short_path.is_err() {
+                eprintln!("error removing prefix: {:?}", entry);
+                continue;
+            }
+
+            let file = match short_path.unwrap().to_str() {
                 Some(s) => s.to_string(),
                 None => continue,
             };
@@ -77,7 +85,8 @@ impl Widget for &App {
             }
         }
 
-        Tree::new(&[root_item])
+        let items = [root_item];
+        let tree = Tree::new(&items)
             .unwrap()
             .experimental_scrollbar(Some(
                 Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -89,7 +98,8 @@ impl Widget for &App {
             .highlight_style(Style::new().fg(Color::Black).bg(Color::LightBlue))
             .node_closed_symbol("⏵ ")
             .node_open_symbol("⏷ ")
-            .block(block)
-            .render(area, buf);
+            .block(block);
+
+        frame.render_stateful_widget(tree, frame.area(), &mut self.library_tree_state);
     }
 }

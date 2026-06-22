@@ -1,13 +1,13 @@
 use anyhow::Result;
 use ratatui::{
-    DefaultTerminal, Frame,
+    DefaultTerminal,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
 };
 use tui_tree_widget::TreeState;
 
 #[derive(Debug)]
 pub struct App {
-    library_tree_state: TreeState<(String, bool)>,
+    pub library_tree_state: TreeState<(String, bool)>,
     exit: bool,
 }
 
@@ -21,14 +21,10 @@ impl App {
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
-            terminal.draw(|frame| self.draw(frame))?;
+            terminal.draw(|frame| self.render(frame))?;
             self.handle_events()?;
         }
         Ok(())
-    }
-
-    fn draw(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
     }
 
     fn handle_events(&mut self) -> Result<()> {
