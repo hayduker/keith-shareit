@@ -2,11 +2,11 @@
 
 cargo build
 
-cp target/debug/d2j a/
-cp target/debug/d2j b/
+cp target/debug/keith-shareit a/
+cp target/debug/keith-shareit b/
 
 rm -rf b/payload
 
 cd a/
 
-./d2j send payload
+./keith-shareit send payload
