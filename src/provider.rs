@@ -31,6 +31,9 @@ pub async fn send(path: PathBuf) -> Result<()> {
         .bind()
         .await?;
 
+    println!("Endpoint id: {}", endpoint.id());
+    println!("Endpoint addr: {:?}", endpoint.addr());
+
     let store_dir = create_tmp_send_dir(&path).await?;
     let store = FsStore::load(&store_dir).await?;
 

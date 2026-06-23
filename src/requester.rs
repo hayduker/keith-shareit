@@ -25,6 +25,9 @@ pub async fn receive(ticket: BlobTicket) -> Result<()> {
         .bind()
         .await?;
 
+    println!("Endpoint id: {}", endpoint.id());
+    println!("Endpoint addr: {:?}", endpoint.addr());
+
     let store_dir = format!(".recv-{}", ticket.hash().to_hex());
     let store_dir = std::env::current_dir()?.join(store_dir);
     let db = FsStore::load(&store_dir).await?;

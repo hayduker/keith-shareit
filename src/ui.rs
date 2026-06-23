@@ -1,11 +1,9 @@
 use ratatui::{
     Frame,
-    buffer::Buffer,
-    layout::Rect,
     style::{Color, Style, Stylize},
     symbols::border,
     text::Line,
-    widgets::{Block, Scrollbar, ScrollbarOrientation, Widget},
+    widgets::{Block, Scrollbar, ScrollbarOrientation},
 };
 use tui_tree_widget::{Tree, TreeItem};
 use walkdir::WalkDir;
