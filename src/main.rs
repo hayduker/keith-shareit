@@ -1,20 +1,22 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use iroh::EndpointId;
+use iroh::{Endpoint, EndpointId, endpoint::presets};
 use iroh_blobs::Hash;
+use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
+use n0_future::StreamExt;
 
 use crate::{
     app::App,
     cli::{Args, Commands},
-    // notify::{notify_receiver_to_download, start_reciever_listener},
+    endpoint::create_endpoint,
     provider::send,
     requester::receive,
 };
 
 mod app;
 mod cli;
-// mod notify;
+mod endpoint;
 mod provider;
 mod requester;
 mod secret;
@@ -27,12 +29,10 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let result = match args.command {
-        // Commands::Receive(_) => start_reciever_listener().await,
-        // Commands::Send(_) => {
-        //     notify_receiver_to_download(Hash::new([0, 1, 2]), PathBuf::new()).await
-        // }
-        Commands::Send(args) => send(args.path).await,
-        Commands::Receive(args) => receive(args.ticket).await,
+        // Commands::Send(args) => send(args.path).await,
+        // Commands::Receive(args) => receive(args.ticket).await,
+        Commands::Send(_) => create_endpoint(true).await,
+        Commands::Receive(_) => create_endpoint(false).await,
     };
 
     if let Err(e) = &result {
@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match result {
-        Ok(()) => std::process::exit(0),
+        Ok(_) => std::process::exit(0),
         Err(_) => std::process::exit(1),
     }
 }

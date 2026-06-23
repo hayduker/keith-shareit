@@ -22,15 +22,15 @@ pub enum Commands {
 
 #[derive(Parser, Debug)]
 pub struct SendArgs {
-    /// Path to the file or directory to send.
-    ///
-    /// The last component of the path will be used as the name of the data
-    /// being shared.
-    pub path: PathBuf,
+    // Path to the file or directory to send.
+    //
+    // The last component of the path will be used as the name of the data
+    // being shared.
+    // pub path: PathBuf,
 }
 
 #[derive(Parser, Debug)]
 pub struct ReceiveArgs {
-    /// The ticket to use to connect to the sender.
-    pub ticket: BlobTicket,
+    // The ticket to use to connect to the sender.
+    // pub ticket: BlobTicket,
 }

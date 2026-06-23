@@ -22,6 +22,12 @@ use walkdir::WalkDir;
 
 use crate::secret::get_or_create_secret;
 
+pub async fn create_store(path: &PathBuf) -> Result<(FsStore, PathBuf)> {
+    let store_dir = create_tmp_send_dir(&path).await?;
+    let store = FsStore::load(&store_dir).await?;
+    Ok((store, store_dir))
+}
+
 pub async fn send(path: PathBuf) -> Result<()> {
     // set up store and endpoint
     let secret_key = get_or_create_secret()?;
@@ -34,8 +40,7 @@ pub async fn send(path: PathBuf) -> Result<()> {
     println!("Endpoint id: {}", endpoint.id());
     println!("Endpoint addr: {:?}", endpoint.addr());
 
-    let store_dir = create_tmp_send_dir(&path).await?;
-    let store = FsStore::load(&store_dir).await?;
+    let (store, store_dir) = create_store(&path).await?;
 
     println!("Importing {}...", path.display());
     let blobs = BlobsProtocol::new(&store, None);
@@ -64,7 +69,7 @@ pub async fn send(path: PathBuf) -> Result<()> {
 }
 
 /// Import from a file or directory into the database.
-async fn import(path: PathBuf, db: &Store) -> Result<TempTag> {
+pub async fn import(path: PathBuf, db: &Store) -> Result<TempTag> {
     let path = path.canonicalize()?;
     anyhow::ensure!(path.exists(), "path {} does not exist", path.display());
 
