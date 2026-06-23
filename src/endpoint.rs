@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use iroh::{
     Endpoint, EndpointAddr,
-    endpoint::{Connection, presets},
+    endpoint::{Connection, RecvStream, presets},
     endpoint_info::EndpointInfo,
 };
 use iroh_blobs::{BlobsProtocol, Hash};
@@ -9,7 +9,7 @@ use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, str::FromStr};
-use std::{thread, time};
+use tokio::io::AsyncBufReadExt;
 
 use crate::{
     provider::{create_store, import},
@@ -18,7 +18,7 @@ use crate::{
 
 const NOTIFY_ALPN: &[u8] = b"keith-shareit/1";
 
-pub async fn create_endpoint(sender: bool) -> Result<Endpoint> {
+pub async fn create_endpoint() -> Result<(Endpoint, MdnsAddressLookup)> {
     let secret_key = get_or_create_secret()?;
 
     let endpoint = Endpoint::builder(presets::Minimal)
@@ -32,49 +32,54 @@ pub async fn create_endpoint(sender: bool) -> Result<Endpoint> {
 
     println!("Endpoint created with id: {}", endpoint.id());
 
-    let mut connected_addr: Option<EndpointInfo> = None;
+    Ok((endpoint, mdns))
+}
+
+pub async fn make_connection(
+    endpoint: &Endpoint,
+    mdns: MdnsAddressLookup,
+    sender: bool,
+) -> Result<()> {
     let mut events = mdns.subscribe().await;
-    while let Some(event) = events.next().await {
-        match event {
-            DiscoveryEvent::Discovered { endpoint_info, .. } => {
-                println!(
-                    "MDNS discovered: {}",
-                    endpoint_info.clone().into_endpoint_addr().id
-                );
+    let mut connection: Option<Connection> = None;
 
-                if sender && connected_addr.is_none() {
-                    let connection =
-                        connect(&endpoint, endpoint_info.clone().into_endpoint_addr()).await?;
+    println!("Starting discovery phase...");
 
-                    connected_addr = Some(endpoint_info);
+    while connection.is_none() {
+        if let Some(event) = events.next().await {
+            match event {
+                DiscoveryEvent::Discovered { endpoint_info, .. } => {
+                    let target_addr = endpoint_info.into_endpoint_addr();
+                    println!("MDNS discovered: {}", target_addr.id);
 
-                    send_download_notification(
-                        &connection,
-                        PathBuf::from_str("/home/derek/smallmusic")?,
-                    )
-                    .await?;
-
-                    thread::sleep(time::Duration::from_secs(5));
-
-                    println!("End of sender block");
-                } else if !sender && connected_addr.is_none() {
-                    let connection = accept(&endpoint).await?;
-
-                    println!("Accepted connection to sender");
-
-                    receive_download_notification(&connection).await?;
-
-                    println!("End of receiver block");
+                    if sender {
+                        if let Ok(conn) = connect(endpoint, target_addr).await {
+                            connection = Some(conn);
+                        }
+                    } else {
+                        if let Ok(conn) = accept(endpoint).await {
+                            connection = Some(conn);
+                        }
+                    }
                 }
+                DiscoveryEvent::Expired { endpoint_id } => {
+                    println!("MDNS expired: {endpoint_id}");
+                }
+                _ => {}
             }
-            DiscoveryEvent::Expired { endpoint_id } => {
-                println!("MDNS expired: {endpoint_id}");
-            }
-            _ => {}
         }
     }
 
-    Ok(endpoint)
+    let connection = connection.unwrap();
+    println!("Connection secured, moving to sync loop");
+
+    if sender {
+        run_sender_loop(connection).await?;
+    } else {
+        run_receiver_loop(connection).await?;
+    }
+
+    Ok(())
 }
 
 async fn connect(endpoint: &Endpoint, addr: EndpointAddr) -> Result<Connection> {
@@ -85,6 +90,56 @@ async fn connect(endpoint: &Endpoint, addr: EndpointAddr) -> Result<Connection> 
     println!("Connection established");
 
     Ok(connection)
+}
+
+async fn accept(endpoint: &Endpoint) -> Result<Connection> {
+    println!("Waiting to accept connection");
+
+    let connection = endpoint
+        .accept()
+        .await
+        .context("no incoming connection")?
+        .await
+        .context("accept connection")?;
+
+    println!("Connection accepted");
+
+    Ok(connection)
+}
+
+async fn run_sender_loop(connection: Connection) -> Result<()> {
+    let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut line = String::new();
+
+    loop {
+        println!("\nPress any key to trigger a test SyncCommand transmission...");
+        tokio::select! {
+            _ = connection.closed() => {
+                println!("Receiver disconnected. Exiting sender loop.");
+                break;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("Shutting down.");
+                connection.close(1u8.into(), b"done");
+            }
+            read_result = reader.read_line(&mut line) => {
+                read_result.context("Failed to read stdin")?;
+                line.clear();
+
+                println!("User triggered sync action!");
+
+                let path_to_send = PathBuf::from_str("/home/derek/smallmusic")?;
+
+                if let Err(e) = send_download_notification(&connection, path_to_send).await {
+                    eprintln!("Error sending notification: {:?}", e);
+                }
+
+                println!("Sync command sent");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn send_download_notification(connection: &Connection, blob_path: PathBuf) -> Result<()> {
@@ -120,42 +175,49 @@ async fn send_download_notification(connection: &Connection, blob_path: PathBuf)
     Ok(())
 }
 
-async fn accept(endpoint: &Endpoint) -> Result<Connection> {
-    println!("Waiting to accept connection");
+async fn run_receiver_loop(connection: Connection) -> Result<()> {
+    loop {
+        println!("\nReceiver is listening for incoming SyncCommands...");
+        tokio::select! {
+            _ = connection.closed() => {
+                println!("Sender disconnected. Exiting receiver loop.");
+                break;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("Shutting down.");
+                connection.close(1u8.into(), b"done");
+            }
+            stream_result = connection.accept_uni() => {
+                match stream_result {
+                    Ok(mut recv_stream) => {
+                        match read_command_from_stream(&mut recv_stream).await {
+                            Ok(command) => {
+                                println!("Received a new target hash");
+                                println!("  Hash: {}", command.hash);
+                                println!("  Path: {:?}", command.path);
+                            }
+                            Err(e) => eprintln!("Failed to parse incoming stream data: {:?}", e),
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error accepting unidirectional stream: {:?}", e);
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
-    let connection = endpoint
-        .accept()
-        .await
-        .context("no incoming connection")?
-        .await
-        .context("accept connection")?;
-
-    println!("Connection accepted");
-
-    Ok(connection)
+    Ok(())
 }
 
-async fn receive_download_notification(connection: &Connection) -> Result<SyncCommand> {
-    println!("Going to receive notification");
-
-    let mut recv_stream = connection
-        .accept_uni()
-        .await
-        .context("failed to accept stream")?;
-
+async fn read_command_from_stream(recv_stream: &mut RecvStream) -> Result<SyncCommand> {
     let bytes = recv_stream
         .read_to_end(10000)
         .await
-        .context("read from stream")?;
-
-    println!("Got {} bytes from sender", bytes.len());
+        .context("Failed reading from incoming stream buffer")?;
 
     let command: SyncCommand = postcard::from_bytes(&bytes)?;
-    println!(
-        "Got SyncCommand command with hash {} and path {:?}",
-        command.hash, command.path
-    );
-
     Ok(command)
 }
 

@@ -9,7 +9,7 @@ use n0_future::StreamExt;
 use crate::{
     app::App,
     cli::{Args, Commands},
-    endpoint::create_endpoint,
+    endpoint::{create_endpoint, make_connection},
     provider::send,
     requester::receive,
 };
@@ -28,11 +28,13 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
+    let (endpoint, mdns) = create_endpoint().await?;
+
     let result = match args.command {
         // Commands::Send(args) => send(args.path).await,
         // Commands::Receive(args) => receive(args.ticket).await,
-        Commands::Send(_) => create_endpoint(true).await,
-        Commands::Receive(_) => create_endpoint(false).await,
+        Commands::Send(_) => make_connection(&endpoint, mdns, true).await,
+        Commands::Receive(_) => make_connection(&endpoint, mdns, false).await,
     };
 
     if let Err(e) = &result {
