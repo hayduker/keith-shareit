@@ -192,7 +192,7 @@ fn canonicalized_path_to_string(path: impl AsRef<Path>, must_be_relative: bool) 
 async fn create_tmp_send_dir(path: &PathBuf) -> Result<PathBuf> {
     let suffix = rand::rng().random::<[u8; 16]>();
     let cwd = std::env::current_dir()?;
-    let dir = cwd.join(format!(".sendme-send-{}", HEXLOWER.encode(&suffix)));
+    let dir = cwd.join(format!(".send-{}", HEXLOWER.encode(&suffix)));
 
     anyhow::ensure!(
         !dir.exists(),

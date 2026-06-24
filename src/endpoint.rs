@@ -10,7 +10,7 @@ use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     thread,
     time::{self, Duration},
@@ -156,6 +156,22 @@ async fn run_sender_loop(connection: &Connection, endpoint: &Endpoint) -> Result
         }
     }
 
+    println!("Cleaning up...");
+
+    for (_tag, store, store_dir, router) in active_data {
+        verify_safe_to_delete(&store_dir, ".send")?;
+        tokio::fs::remove_dir_all(store_dir).await?;
+        let _ = tokio::time::timeout(Duration::from_secs(2), router.shutdown())
+            .await
+            .context("Failed to shutdown router");
+        let _ = tokio::time::timeout(Duration::from_secs(2), store.shutdown())
+            .await
+            .context("Failed to shutown store");
+    }
+    connection.closed().await;
+
+    println!("Shutting down.");
+
     Ok(())
 }
 
@@ -163,7 +179,7 @@ async fn send_download_notification(
     connection: &Connection,
     blob_path: PathBuf,
     endpoint: &Endpoint,
-) -> Result<(TempTag, FsStore, Router)> {
+) -> Result<(TempTag, FsStore, PathBuf, Router)> {
     println!("Going to send notification");
 
     let mut send_stream = connection
@@ -173,7 +189,7 @@ async fn send_download_notification(
 
     println!("Got SendStream {}", send_stream.id());
 
-    let (store, _store_dir) = create_store(&blob_path).await?;
+    let (store, store_dir) = create_store(&blob_path).await?;
     let blobs = BlobsProtocol::new(&store, None);
     let tag = import(blob_path.clone(), blobs.store()).await?;
 
@@ -203,7 +219,7 @@ async fn send_download_notification(
 
     println!("Sync command sent");
 
-    Ok((tag, store, router))
+    Ok((tag, store, store_dir, router))
 }
 
 async fn run_receiver_loop(
@@ -259,8 +275,31 @@ async fn read_command_from_stream(recv_stream: &mut RecvStream) -> Result<SyncCo
     Ok(command)
 }
 
-async fn _close_connection(connection: Connection) -> Result<()> {
+async fn close_connection(connection: Connection) -> Result<()> {
     connection.closed().await;
+    Ok(())
+}
+
+fn verify_safe_to_delete(path: &PathBuf, expected_prefix: &str) -> Result<()> {
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|e| anyhow::anyhow!("Failed to resolve absolute path: {e}"))?;
+
+    if canonical_path == Path::new("/") {
+        anyhow::bail!("Safety violation: Attempted to delete the root directory!");
+    }
+
+    if let Some(file_name) = canonical_path.file_name().and_then(|s| s.to_str()) {
+        if !file_name.starts_with(expected_prefix) {
+            anyhow::bail!(
+                "Safety violation: Path '{:?}' does not start with the expected prefix '{expected_prefix}'",
+                canonical_path
+            );
+        }
+    } else {
+        anyhow::bail!("Safety violation: Could not extract a valid directory name.");
+    }
+
     Ok(())
 }
 
