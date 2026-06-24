@@ -9,7 +9,6 @@ use crate::{
 mod app;
 mod cli;
 mod endpoint;
-mod provider;
 mod requester;
 mod secret;
 mod store;
@@ -25,11 +24,11 @@ async fn main() -> anyhow::Result<()> {
         // Commands::Send(args) => send(args.path).await,
         // Commands::Receive(args) => receive(args.ticket).await,
         Commands::Send(_) => {
-            let (endpoint, mdns, store, store_dir, router) = create_endpoint(true).await?;
+            let (endpoint, mdns, store, _router) = create_endpoint(true).await?;
             make_connection(&endpoint, mdns, &store, true).await
         }
         Commands::Receive(_) => {
-            let (endpoint, mdns, store, store_dir, _) = create_endpoint(false).await?;
+            let (endpoint, mdns, store, _) = create_endpoint(false).await?;
             make_connection(&endpoint, mdns, &store, false).await
         }
     };

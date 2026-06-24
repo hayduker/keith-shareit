@@ -4,7 +4,7 @@ use iroh::{
     endpoint::{Connection, RecvStream, presets},
     protocol::Router,
 };
-use iroh_blobs::{BlobsProtocol, HashAndFormat, api::TempTag, store::fs::FsStore};
+use iroh_blobs::{BlobsProtocol, HashAndFormat, api::TempTag};
 use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -14,23 +14,13 @@ use std::{
 };
 use tokio::io::AsyncBufReadExt;
 
-use crate::{
-    provider::{create_store, import},
-    requester::receive,
-    secret::get_or_create_secret,
-};
+use crate::{requester::receive, secret::get_or_create_secret, store::KeithStore};
 
 const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 
 pub async fn create_endpoint(
     sender: bool,
-) -> Result<(
-    Endpoint,
-    MdnsAddressLookup,
-    FsStore,
-    PathBuf,
-    Option<Router>,
-)> {
+) -> Result<(Endpoint, MdnsAddressLookup, KeithStore, Option<Router>)> {
     let secret_key = get_or_create_secret()?;
 
     let endpoint = Endpoint::builder(presets::Minimal)
@@ -49,8 +39,9 @@ pub async fn create_endpoint(
 
     println!("Creating store");
 
-    let (store, store_dir) = create_store().await?;
-    let blobs = BlobsProtocol::new(&store, None);
+    let store = KeithStore::new().await?;
+
+    let blobs = BlobsProtocol::new(&store.db, None);
 
     println!("Creating router");
 
@@ -59,16 +50,16 @@ pub async fn create_endpoint(
             .accept(iroh_blobs::ALPN, blobs)
             .spawn();
 
-        Ok((endpoint, mdns, store, store_dir, Some(router)))
+        Ok((endpoint, mdns, store, Some(router)))
     } else {
-        Ok((endpoint, mdns, store, store_dir, None))
+        Ok((endpoint, mdns, store, None))
     }
 }
 
 pub async fn make_connection(
     endpoint: &Endpoint,
     mdns: MdnsAddressLookup,
-    store: &FsStore,
+    store: &KeithStore,
     sender: bool,
 ) -> Result<()> {
     let mut events = mdns.subscribe().await;
@@ -111,7 +102,7 @@ pub async fn make_connection(
     if sender {
         run_sender_loop(&connection, store).await?;
     } else {
-        run_receiver_loop(&connection, endpoint, target_addr).await?;
+        run_receiver_loop(&connection, endpoint, target_addr, store).await?;
     }
 
     Ok(())
@@ -142,7 +133,7 @@ async fn accept(endpoint: &Endpoint) -> Result<Connection> {
     Ok(connection)
 }
 
-async fn run_sender_loop(connection: &Connection, store: &FsStore) -> Result<()> {
+async fn run_sender_loop(connection: &Connection, store: &KeithStore) -> Result<()> {
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut line = String::new();
 
@@ -199,7 +190,7 @@ async fn run_sender_loop(connection: &Connection, store: &FsStore) -> Result<()>
 async fn send_download_notification(
     connection: &Connection,
     blob_path: PathBuf,
-    store: &FsStore,
+    store: &KeithStore,
 ) -> Result<TempTag> {
     println!("Going to send notification");
 
@@ -210,7 +201,7 @@ async fn send_download_notification(
 
     println!("Got SendStream {}", send_stream.id());
 
-    let tag = import(blob_path.clone(), store).await?;
+    let tag = store.import(blob_path.clone()).await?;
 
     println!(
         "Sending SyncCommand with hash {} and path {:?}",
@@ -237,6 +228,7 @@ async fn run_receiver_loop(
     connection: &Connection,
     endpoint: &Endpoint,
     target_addr: EndpointAddr,
+    store: &KeithStore,
 ) -> Result<()> {
     let connection = connection.clone();
     loop {
@@ -259,7 +251,7 @@ async fn run_receiver_loop(
                                 println!("  HashAndFormat: {}", command.hash_and_format);
                                 println!("  Path: {:?}", command.path);
 
-                                receive(endpoint, command.hash_and_format, target_addr.clone()).await?;
+                                receive(endpoint, command.hash_and_format, target_addr.clone(), store).await?;
                             }
                             Err(e) => eprintln!("Failed to parse incoming stream data: {:?}", e),
                         }
