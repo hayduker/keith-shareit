@@ -21,13 +21,11 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let result = match args.command {
-        // Commands::Send(args) => send(args.path).await,
-        // Commands::Receive(args) => receive(args.ticket).await,
-        Commands::Send(_) => {
-            let (endpoint, mdns, store, _router) = create_endpoint(true).await?;
+        Commands::Send => {
+            let (endpoint, mdns, store, router) = create_endpoint(true).await?;
             make_connection(&endpoint, mdns, &store, true).await
         }
-        Commands::Receive(_) => {
+        Commands::Receive => {
             let (endpoint, mdns, store, _) = create_endpoint(false).await?;
             make_connection(&endpoint, mdns, &store, false).await
         }

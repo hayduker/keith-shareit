@@ -12,7 +12,10 @@ use iroh_blobs::{
 };
 use n0_future::StreamExt;
 use rand::RngExt;
-use std::path::{Component, Path, PathBuf};
+use std::{
+    path::{Component, Path, PathBuf},
+    time::Duration,
+};
 use walkdir::WalkDir;
 
 pub struct KeithStore {
@@ -132,6 +135,14 @@ impl KeithStore {
                 })
                 .await?;
         }
+        Ok(())
+    }
+
+    pub async fn cleanup(self: &KeithStore) -> Result<()> {
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.db.shutdown())
+            .await
+            .context("Failed to shutown store");
+        tokio::fs::remove_dir_all(&self.tmp_dir).await?;
         Ok(())
     }
 

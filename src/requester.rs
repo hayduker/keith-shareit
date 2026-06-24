@@ -24,6 +24,7 @@ pub async fn receive(
                 .await?;
 
             println!("Made blob connection back to sender");
+            println!("Downloading...");
 
             get_hash_seq_and_sizes(&connection, &hash_and_format.hash, 1024 * 1024 * 32, None)
                 .await?;
@@ -44,6 +45,8 @@ pub async fn receive(
             }
         };
 
+        println!("Download complete.");
+
         let collection = Collection::load(hash_and_format.hash, store.db.as_ref()).await?;
 
         if let Some((name, _)) = collection.iter().next()
@@ -59,12 +62,8 @@ pub async fn receive(
 
     select! {
         x = download_future => match x {
-            Ok(_) => {
-                // endpoint.close().await;
-                // tokio::fs::remove_dir_all(&store.tmp_dir).await?;
-            }
+            Ok(_) => {}
             Err(e) => {
-                // endpoint.close().await;
                 store.db.shutdown().await?;
                 eprintln!("Error: {e}");
                 tokio::fs::remove_dir_all(&store.tmp_dir).await?;
@@ -73,7 +72,6 @@ pub async fn receive(
         },
         _ = tokio::signal::ctrl_c() => {
             println!("Shutting down.");
-            // endpoint.close().await;
             store.db.shutdown().await?;
             tokio::fs::remove_dir_all(&store.tmp_dir).await?;
             std::process::exit(130);

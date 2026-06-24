@@ -8,10 +8,7 @@ use iroh_blobs::{BlobsProtocol, HashAndFormat, api::TempTag};
 use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{path::PathBuf, str::FromStr};
 use tokio::io::AsyncBufReadExt;
 
 use crate::{requester::receive, secret::get_or_create_secret, store::KeithStore};
@@ -152,11 +149,12 @@ async fn run_sender_loop(connection: &Connection, store: &KeithStore) -> Result<
             }
             read_result = reader.read_line(&mut line) => {
                 read_result.context("Failed to read stdin")?;
-                line.clear();
 
                 println!("User triggered sync action!");
 
-                let path_to_send = PathBuf::from_str("/home/derek/programming/keith-shareit/a/payload")?;
+                let path_to_send = PathBuf::from_str(line.trim())?;
+
+                println!("User entered >{}<, path = {:?}", line, path_to_send);
 
                 match send_download_notification(connection, path_to_send, store).await {
                     Ok(tag) => {
@@ -164,22 +162,16 @@ async fn run_sender_loop(connection: &Connection, store: &KeithStore) -> Result<
                     }
                     Err(e) => eprintln!("Error sending notification: {:?}", e)
                 }
+
+                line.clear();
             }
         }
     }
 
     println!("Cleaning up...");
 
-    // for (_tag, store, store_dir, router) in active_tags {
-    //     verify_safe_to_delete(&store_dir, ".send")?;
-    //     tokio::fs::remove_dir_all(store_dir).await?;
-    //     let _ = tokio::time::timeout(Duration::from_secs(2), router.shutdown())
-    //         .await
-    //         .context("Failed to shutdown router");
-    //     let _ = tokio::time::timeout(Duration::from_secs(2), store.shutdown())
-    //         .await
-    //         .context("Failed to shutown store");
-    // }
+    active_tags.clear();
+    store.cleanup().await?;
     connection.closed().await;
 
     println!("Shutting down.");
@@ -200,6 +192,8 @@ async fn send_download_notification(
         .context("failed to open unidirectional connection")?;
 
     println!("Got SendStream {}", send_stream.id());
+
+    println!("Importing...");
 
     let tag = store.import(blob_path.clone()).await?;
 
@@ -276,29 +270,6 @@ async fn read_command_from_stream(recv_stream: &mut RecvStream) -> Result<SyncCo
 
     let command: SyncCommand = postcard::from_bytes(&bytes)?;
     Ok(command)
-}
-
-fn verify_safe_to_delete(path: &PathBuf, expected_prefix: &str) -> Result<()> {
-    let canonical_path = path
-        .canonicalize()
-        .map_err(|e| anyhow::anyhow!("Failed to resolve absolute path: {e}"))?;
-
-    if canonical_path == Path::new("/") {
-        anyhow::bail!("Safety violation: Attempted to delete the root directory!");
-    }
-
-    if let Some(file_name) = canonical_path.file_name().and_then(|s| s.to_str()) {
-        if !file_name.starts_with(expected_prefix) {
-            anyhow::bail!(
-                "Safety violation: Path '{:?}' does not start with the expected prefix '{expected_prefix}'",
-                canonical_path
-            );
-        }
-    } else {
-        anyhow::bail!("Safety violation: Could not extract a valid directory name.");
-    }
-
-    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Debug)]
