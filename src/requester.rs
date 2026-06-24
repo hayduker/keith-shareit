@@ -13,7 +13,10 @@ use iroh_blobs::{
     ticket::BlobTicket,
 };
 use n0_future::StreamExt;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use tokio::select;
 
 use crate::secret::get_or_create_secret;
@@ -183,7 +186,16 @@ async fn export(db: &Store, collection: Collection) -> Result<()> {
     for (name, hash) in collection.iter() {
         let target = get_export_path(&root, name)?;
         if target.exists() {
-            anyhow::bail!("target {} already exists", target.display());
+            if target.is_dir() {
+                println!(
+                    "Removing existing directory at export location: {:?}",
+                    target
+                );
+                fs::remove_dir_all(target.clone())?;
+            } else if target.is_file() {
+                println!("Removing existing file at export location: {:?}", target);
+                fs::remove_file(target.clone())?;
+            }
         }
         let _ = db
             .export_with_opts(ExportOptions {
