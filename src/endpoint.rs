@@ -3,27 +3,37 @@ use iroh::{
     Endpoint, EndpointAddr,
     endpoint::{Connection, RecvStream, presets},
     endpoint_info::EndpointInfo,
+    protocol::Router,
 };
-use iroh_blobs::{BlobsProtocol, Hash};
+use iroh_blobs::{BlobsProtocol, HashAndFormat, api::TempTag};
 use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    path::PathBuf,
+    str::FromStr,
+    thread,
+    time::{self, Duration},
+};
 use tokio::io::AsyncBufReadExt;
 
 use crate::{
     provider::{create_store, import},
+    requester::receive,
     secret::get_or_create_secret,
 };
 
-const NOTIFY_ALPN: &[u8] = b"keith-shareit/1";
+const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 
 pub async fn create_endpoint() -> Result<(Endpoint, MdnsAddressLookup)> {
     let secret_key = get_or_create_secret()?;
 
     let endpoint = Endpoint::builder(presets::Minimal)
         .secret_key(secret_key)
-        .alpns(vec![NOTIFY_ALPN.to_vec()])
+        .alpns(vec![
+            SYNC_ALPN.to_vec(),
+            iroh_blobs::protocol::ALPN.to_vec(),
+        ])
         .bind()
         .await?;
 
@@ -42,6 +52,7 @@ pub async fn make_connection(
 ) -> Result<()> {
     let mut events = mdns.subscribe().await;
     let mut connection: Option<Connection> = None;
+    let mut target_address: Option<EndpointAddr> = None;
 
     println!("Starting discovery phase...");
 
@@ -53,12 +64,14 @@ pub async fn make_connection(
                     println!("MDNS discovered: {}", target_addr.id);
 
                     if sender {
-                        if let Ok(conn) = connect(endpoint, target_addr).await {
+                        if let Ok(conn) = connect(endpoint, target_addr.clone()).await {
                             connection = Some(conn);
+                            target_address = Some(target_addr);
                         }
                     } else {
                         if let Ok(conn) = accept(endpoint).await {
                             connection = Some(conn);
+                            target_address = Some(target_addr);
                         }
                     }
                 }
@@ -71,12 +84,13 @@ pub async fn make_connection(
     }
 
     let connection = connection.unwrap();
+    let target_addr = target_address.unwrap();
     println!("Connection secured, moving to sync loop");
 
     if sender {
-        run_sender_loop(connection).await?;
+        run_sender_loop(connection, endpoint).await?;
     } else {
-        run_receiver_loop(connection).await?;
+        run_receiver_loop(connection, endpoint, target_addr).await?;
     }
 
     Ok(())
@@ -85,7 +99,7 @@ pub async fn make_connection(
 async fn connect(endpoint: &Endpoint, addr: EndpointAddr) -> Result<Connection> {
     println!("Trying to connect to {}", addr.id);
 
-    let connection = endpoint.connect(addr, NOTIFY_ALPN).await?;
+    let connection = endpoint.connect(addr, SYNC_ALPN).await?;
 
     println!("Connection established");
 
@@ -107,7 +121,7 @@ async fn accept(endpoint: &Endpoint) -> Result<Connection> {
     Ok(connection)
 }
 
-async fn run_sender_loop(connection: Connection) -> Result<()> {
+async fn run_sender_loop(connection: Connection, endpoint: &Endpoint) -> Result<()> {
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut line = String::new();
 
@@ -128,13 +142,12 @@ async fn run_sender_loop(connection: Connection) -> Result<()> {
 
                 println!("User triggered sync action!");
 
-                let path_to_send = PathBuf::from_str("/home/derek/smallmusic")?;
+                let path_to_send = PathBuf::from_str("/home/derek/programming/keith-shareit/a/payload")?;
 
-                if let Err(e) = send_download_notification(&connection, path_to_send).await {
-                    eprintln!("Error sending notification: {:?}", e);
+                match send_download_notification(&connection, path_to_send, endpoint).await {
+                    Ok(_tag) => {}
+                    Err(e) => eprintln!("Error sending notification: {:?}", e)
                 }
-
-                println!("Sync command sent");
             }
         }
     }
@@ -142,7 +155,11 @@ async fn run_sender_loop(connection: Connection) -> Result<()> {
     Ok(())
 }
 
-async fn send_download_notification(connection: &Connection, blob_path: PathBuf) -> Result<()> {
+async fn send_download_notification(
+    connection: &Connection,
+    blob_path: PathBuf,
+    endpoint: &Endpoint,
+) -> Result<TempTag> {
     println!("Going to send notification");
 
     let mut send_stream = connection
@@ -156,6 +173,14 @@ async fn send_download_notification(connection: &Connection, blob_path: PathBuf)
     let blobs = BlobsProtocol::new(&store, None);
     let tag = import(blob_path.clone(), blobs.store()).await?;
 
+    println!("Creating router");
+
+    let router = Router::builder(endpoint.clone())
+        .accept(iroh_blobs::ALPN, blobs)
+        .spawn();
+
+    println!("Created router for ep {}", router.endpoint().id());
+
     println!(
         "Sending SyncCommand with hash {} and path {:?}",
         tag.hash(),
@@ -163,7 +188,7 @@ async fn send_download_notification(connection: &Connection, blob_path: PathBuf)
     );
 
     let command = SyncCommand {
-        hash: tag.hash(),
+        hash_and_format: tag.hash_and_format(),
         path: blob_path,
     };
     let payload = postcard::to_stdvec(&command)?;
@@ -172,10 +197,17 @@ async fn send_download_notification(connection: &Connection, blob_path: PathBuf)
         .finish()
         .context("failed to finish send stream")?;
 
-    Ok(())
+    println!("Sync command sent");
+    thread::sleep(time::Duration::from_secs(10));
+
+    Ok(tag)
 }
 
-async fn run_receiver_loop(connection: Connection) -> Result<()> {
+async fn run_receiver_loop(
+    connection: Connection,
+    endpoint: &Endpoint,
+    target_addr: EndpointAddr,
+) -> Result<()> {
     loop {
         println!("\nReceiver is listening for incoming SyncCommands...");
         tokio::select! {
@@ -193,8 +225,10 @@ async fn run_receiver_loop(connection: Connection) -> Result<()> {
                         match read_command_from_stream(&mut recv_stream).await {
                             Ok(command) => {
                                 println!("Received a new target hash");
-                                println!("  Hash: {}", command.hash);
+                                println!("  HashAndFormat: {}", command.hash_and_format);
                                 println!("  Path: {:?}", command.path);
+
+                                receive(endpoint, command.hash_and_format, target_addr.clone()).await?;
                             }
                             Err(e) => eprintln!("Failed to parse incoming stream data: {:?}", e),
                         }
@@ -229,6 +263,6 @@ async fn _close_connection(connection: Connection) -> Result<()> {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SyncCommand {
     /// Tell the blob receiver to fetch a specific hash (could be a single blob or a HashSeq/Collection)
-    hash: Hash,
+    hash_and_format: HashAndFormat,
     path: PathBuf,
 }
