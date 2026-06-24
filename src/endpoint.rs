@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use iroh::{
     Endpoint, EndpointAddr,
-    endpoint::{Connection, ConnectionError::TransportError, RecvStream, presets},
-    endpoint_info::EndpointInfo,
+    endpoint::{Connection, RecvStream, presets},
     protocol::Router,
 };
 use iroh_blobs::{BlobsProtocol, HashAndFormat, api::TempTag, store::fs::FsStore};
@@ -12,8 +11,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
-    thread,
-    time::{self, Duration},
 };
 use tokio::io::AsyncBufReadExt;
 
@@ -25,7 +22,15 @@ use crate::{
 
 const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 
-pub async fn create_endpoint() -> Result<(Endpoint, MdnsAddressLookup)> {
+pub async fn create_endpoint(
+    sender: bool,
+) -> Result<(
+    Endpoint,
+    MdnsAddressLookup,
+    FsStore,
+    PathBuf,
+    Option<Router>,
+)> {
     let secret_key = get_or_create_secret()?;
 
     let endpoint = Endpoint::builder(presets::Minimal)
@@ -37,17 +42,33 @@ pub async fn create_endpoint() -> Result<(Endpoint, MdnsAddressLookup)> {
         .bind()
         .await?;
 
+    println!("Endpoint created with id: {}", endpoint.id());
+
     let mdns = MdnsAddressLookup::builder().build(endpoint.id()).unwrap();
     endpoint.address_lookup().unwrap().add(mdns.clone());
 
-    println!("Endpoint created with id: {}", endpoint.id());
+    println!("Creating store");
 
-    Ok((endpoint, mdns))
+    let (store, store_dir) = create_store().await?;
+    let blobs = BlobsProtocol::new(&store, None);
+
+    println!("Creating router");
+
+    if sender {
+        let router = Router::builder(endpoint.clone())
+            .accept(iroh_blobs::ALPN, blobs)
+            .spawn();
+
+        Ok((endpoint, mdns, store, store_dir, Some(router)))
+    } else {
+        Ok((endpoint, mdns, store, store_dir, None))
+    }
 }
 
 pub async fn make_connection(
     endpoint: &Endpoint,
     mdns: MdnsAddressLookup,
+    store: &FsStore,
     sender: bool,
 ) -> Result<()> {
     let mut events = mdns.subscribe().await;
@@ -88,7 +109,7 @@ pub async fn make_connection(
     println!("Connection secured, moving to sync loop");
 
     if sender {
-        run_sender_loop(&connection, endpoint).await?;
+        run_sender_loop(&connection, store).await?;
     } else {
         run_receiver_loop(&connection, endpoint, target_addr).await?;
     }
@@ -121,11 +142,11 @@ async fn accept(endpoint: &Endpoint) -> Result<Connection> {
     Ok(connection)
 }
 
-async fn run_sender_loop(connection: &Connection, endpoint: &Endpoint) -> Result<()> {
+async fn run_sender_loop(connection: &Connection, store: &FsStore) -> Result<()> {
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut line = String::new();
 
-    let mut active_data = vec![];
+    let mut active_tags = vec![];
 
     loop {
         println!("\nPress any key to trigger a test SyncCommand transmission...");
@@ -146,9 +167,9 @@ async fn run_sender_loop(connection: &Connection, endpoint: &Endpoint) -> Result
 
                 let path_to_send = PathBuf::from_str("/home/derek/programming/keith-shareit/a/payload")?;
 
-                match send_download_notification(connection, path_to_send, endpoint).await {
-                    Ok(sender_data) => {
-                        active_data.push(sender_data);
+                match send_download_notification(connection, path_to_send, store).await {
+                    Ok(tag) => {
+                        active_tags.push(tag);
                     }
                     Err(e) => eprintln!("Error sending notification: {:?}", e)
                 }
@@ -158,16 +179,16 @@ async fn run_sender_loop(connection: &Connection, endpoint: &Endpoint) -> Result
 
     println!("Cleaning up...");
 
-    for (_tag, store, store_dir, router) in active_data {
-        verify_safe_to_delete(&store_dir, ".send")?;
-        tokio::fs::remove_dir_all(store_dir).await?;
-        let _ = tokio::time::timeout(Duration::from_secs(2), router.shutdown())
-            .await
-            .context("Failed to shutdown router");
-        let _ = tokio::time::timeout(Duration::from_secs(2), store.shutdown())
-            .await
-            .context("Failed to shutown store");
-    }
+    // for (_tag, store, store_dir, router) in active_tags {
+    //     verify_safe_to_delete(&store_dir, ".send")?;
+    //     tokio::fs::remove_dir_all(store_dir).await?;
+    //     let _ = tokio::time::timeout(Duration::from_secs(2), router.shutdown())
+    //         .await
+    //         .context("Failed to shutdown router");
+    //     let _ = tokio::time::timeout(Duration::from_secs(2), store.shutdown())
+    //         .await
+    //         .context("Failed to shutown store");
+    // }
     connection.closed().await;
 
     println!("Shutting down.");
@@ -178,8 +199,8 @@ async fn run_sender_loop(connection: &Connection, endpoint: &Endpoint) -> Result
 async fn send_download_notification(
     connection: &Connection,
     blob_path: PathBuf,
-    endpoint: &Endpoint,
-) -> Result<(TempTag, FsStore, PathBuf, Router)> {
+    store: &FsStore,
+) -> Result<TempTag> {
     println!("Going to send notification");
 
     let mut send_stream = connection
@@ -189,17 +210,7 @@ async fn send_download_notification(
 
     println!("Got SendStream {}", send_stream.id());
 
-    let (store, store_dir) = create_store(&blob_path).await?;
-    let blobs = BlobsProtocol::new(&store, None);
-    let tag = import(blob_path.clone(), blobs.store()).await?;
-
-    println!("Creating router");
-
-    let router = Router::builder(endpoint.clone())
-        .accept(iroh_blobs::ALPN, blobs)
-        .spawn();
-
-    println!("Created router for ep {}", router.endpoint().id());
+    let tag = import(blob_path.clone(), store).await?;
 
     println!(
         "Sending SyncCommand with hash {} and path {:?}",
@@ -219,7 +230,7 @@ async fn send_download_notification(
 
     println!("Sync command sent");
 
-    Ok((tag, store, store_dir, router))
+    Ok(tag)
 }
 
 async fn run_receiver_loop(
@@ -273,11 +284,6 @@ async fn read_command_from_stream(recv_stream: &mut RecvStream) -> Result<SyncCo
 
     let command: SyncCommand = postcard::from_bytes(&bytes)?;
     Ok(command)
-}
-
-async fn close_connection(connection: Connection) -> Result<()> {
-    connection.closed().await;
-    Ok(())
 }
 
 fn verify_safe_to_delete(path: &PathBuf, expected_prefix: &str) -> Result<()> {

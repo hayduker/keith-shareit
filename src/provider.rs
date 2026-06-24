@@ -1,71 +1,24 @@
 use anyhow::{Context, Result};
 use data_encoding::HEXLOWER;
 use futures_buffered::BufferedStreamExt;
-use iroh::{Endpoint, endpoint::presets};
 use iroh_blobs::{
-    BlobFormat, BlobsProtocol,
+    BlobFormat,
     api::{
         Store, TempTag,
         blobs::{AddPathOptions, AddProgressItem, ImportMode},
     },
     format::collection::Collection,
     store::fs::FsStore,
-    ticket::BlobTicket,
 };
 use n0_future::StreamExt;
 use rand::RngExt;
-use std::{
-    path::{Component, Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::secret::get_or_create_secret;
-
-pub async fn create_store(path: &PathBuf) -> Result<(FsStore, PathBuf)> {
-    let store_dir = create_tmp_send_dir(&path).await?;
+pub async fn create_store() -> Result<(FsStore, PathBuf)> {
+    let store_dir = create_tmp_store_dir().await?;
     let store = FsStore::load(&store_dir).await?;
     Ok((store, store_dir))
-}
-
-pub async fn send(path: PathBuf) -> Result<()> {
-    // set up store and endpoint
-    let secret_key = get_or_create_secret()?;
-    let endpoint = Endpoint::builder(presets::N0)
-        .alpns(vec![iroh_blobs::protocol::ALPN.to_vec()])
-        .secret_key(secret_key)
-        .bind()
-        .await?;
-
-    println!("Endpoint id: {}", endpoint.id());
-    println!("Endpoint addr: {:?}", endpoint.addr());
-
-    let (store, store_dir) = create_store(&path).await?;
-
-    println!("Importing {}...", path.display());
-    let blobs = BlobsProtocol::new(&store, None);
-    let tag = import(path.clone(), blobs.store()).await?;
-    let router = iroh::protocol::Router::builder(endpoint)
-        .accept(iroh_blobs::ALPN, blobs.clone())
-        .spawn();
-
-    println!("Bringing up endpoint...");
-    tokio::time::timeout(Duration::from_secs(30), async {
-        router.endpoint().online().await;
-    })
-    .await?;
-
-    let addr = router.endpoint().addr();
-    let ticket = BlobTicket::new(addr, tag.hash(), BlobFormat::HashSeq);
-    println!("Blob imported, to receive use: {ticket}");
-
-    // wait until interrupt
-    tokio::signal::ctrl_c().await?;
-    println!("\nShutting down.");
-    tokio::time::timeout(Duration::from_secs(2), router.shutdown()).await??;
-    tokio::fs::remove_dir_all(store_dir).await?;
-
-    Ok(())
 }
 
 /// Import from a file or directory into the database.
@@ -189,7 +142,7 @@ fn canonicalized_path_to_string(path: impl AsRef<Path>, must_be_relative: bool) 
     Ok(path_str)
 }
 
-async fn create_tmp_send_dir(path: &PathBuf) -> Result<PathBuf> {
+async fn create_tmp_store_dir() -> Result<PathBuf> {
     let suffix = rand::rng().random::<[u8; 16]>();
     let cwd = std::env::current_dir()?;
     let dir = cwd.join(format!(".send-{}", HEXLOWER.encode(&suffix)));
@@ -198,11 +151,6 @@ async fn create_tmp_send_dir(path: &PathBuf) -> Result<PathBuf> {
         !dir.exists(),
         "can not share twice from the same directory: {}",
         cwd.display()
-    );
-
-    anyhow::ensure!(
-        cwd.join(path) != cwd,
-        "can not share from the current directory"
     );
 
     tokio::fs::create_dir_all(&dir).await?;

@@ -1,17 +1,9 @@
-use std::path::PathBuf;
-
 use clap::Parser;
-use iroh::{Endpoint, EndpointId, endpoint::presets};
-use iroh_blobs::Hash;
-use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
-use n0_future::StreamExt;
 
 use crate::{
     app::App,
     cli::{Args, Commands},
     endpoint::{create_endpoint, make_connection},
-    provider::send,
-    requester::receive,
 };
 
 mod app;
@@ -20,6 +12,7 @@ mod endpoint;
 mod provider;
 mod requester;
 mod secret;
+mod store;
 mod ui;
 
 #[tokio::main]
@@ -28,13 +21,17 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let (endpoint, mdns) = create_endpoint().await?;
-
     let result = match args.command {
         // Commands::Send(args) => send(args.path).await,
         // Commands::Receive(args) => receive(args.ticket).await,
-        Commands::Send(_) => make_connection(&endpoint, mdns, true).await,
-        Commands::Receive(_) => make_connection(&endpoint, mdns, false).await,
+        Commands::Send(_) => {
+            let (endpoint, mdns, store, store_dir, router) = create_endpoint(true).await?;
+            make_connection(&endpoint, mdns, &store, true).await
+        }
+        Commands::Receive(_) => {
+            let (endpoint, mdns, store, store_dir, _) = create_endpoint(false).await?;
+            make_connection(&endpoint, mdns, &store, false).await
+        }
     };
 
     if let Err(e) = &result {
