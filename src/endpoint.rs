@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use iroh::{
     Endpoint, EndpointAddr,
-    endpoint::{Connection, RecvStream, presets},
+    endpoint::{Connection, ConnectionError::TransportError, RecvStream, presets},
     endpoint_info::EndpointInfo,
     protocol::Router,
 };
-use iroh_blobs::{BlobsProtocol, HashAndFormat, api::TempTag};
+use iroh_blobs::{BlobsProtocol, HashAndFormat, api::TempTag, store::fs::FsStore};
 use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -88,9 +88,9 @@ pub async fn make_connection(
     println!("Connection secured, moving to sync loop");
 
     if sender {
-        run_sender_loop(connection, endpoint).await?;
+        run_sender_loop(&connection, endpoint).await?;
     } else {
-        run_receiver_loop(connection, endpoint, target_addr).await?;
+        run_receiver_loop(&connection, endpoint, target_addr).await?;
     }
 
     Ok(())
@@ -121,9 +121,11 @@ async fn accept(endpoint: &Endpoint) -> Result<Connection> {
     Ok(connection)
 }
 
-async fn run_sender_loop(connection: Connection, endpoint: &Endpoint) -> Result<()> {
+async fn run_sender_loop(connection: &Connection, endpoint: &Endpoint) -> Result<()> {
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut line = String::new();
+
+    let mut active_data = vec![];
 
     loop {
         println!("\nPress any key to trigger a test SyncCommand transmission...");
@@ -144,8 +146,10 @@ async fn run_sender_loop(connection: Connection, endpoint: &Endpoint) -> Result<
 
                 let path_to_send = PathBuf::from_str("/home/derek/programming/keith-shareit/a/payload")?;
 
-                match send_download_notification(&connection, path_to_send, endpoint).await {
-                    Ok(_tag) => {}
+                match send_download_notification(connection, path_to_send, endpoint).await {
+                    Ok(sender_data) => {
+                        active_data.push(sender_data);
+                    }
                     Err(e) => eprintln!("Error sending notification: {:?}", e)
                 }
             }
@@ -159,7 +163,7 @@ async fn send_download_notification(
     connection: &Connection,
     blob_path: PathBuf,
     endpoint: &Endpoint,
-) -> Result<TempTag> {
+) -> Result<(TempTag, FsStore, Router)> {
     println!("Going to send notification");
 
     let mut send_stream = connection
@@ -198,21 +202,21 @@ async fn send_download_notification(
         .context("failed to finish send stream")?;
 
     println!("Sync command sent");
-    thread::sleep(time::Duration::from_secs(10));
 
-    Ok(tag)
+    Ok((tag, store, router))
 }
 
 async fn run_receiver_loop(
-    connection: Connection,
+    connection: &Connection,
     endpoint: &Endpoint,
     target_addr: EndpointAddr,
 ) -> Result<()> {
+    let connection = connection.clone();
     loop {
         println!("\nReceiver is listening for incoming SyncCommands...");
         tokio::select! {
             _ = connection.closed() => {
-                println!("Sender disconnected. Exiting receiver loop.");
+                println!("Sender disconnected. Exiting receiver loop. {:?}", connection.close_reason());
                 break;
             }
             _ = tokio::signal::ctrl_c() => {

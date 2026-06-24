@@ -72,11 +72,11 @@ pub async fn receive(
     select! {
         x = download_future => match x {
             Ok(_) => {
-                endpoint.close().await;
+                // endpoint.close().await;
                 tokio::fs::remove_dir_all(store_dir).await?;
             }
             Err(e) => {
-                endpoint.close().await;
+                // endpoint.close().await;
                 db.shutdown().await?;
                 eprintln!("Error: {e}");
                 tokio::fs::remove_dir_all(store_dir).await?;
@@ -85,7 +85,7 @@ pub async fn receive(
         },
         _ = tokio::signal::ctrl_c() => {
             println!("Shutting down.");
-            endpoint.close().await;
+            // endpoint.close().await;
             db.shutdown().await?;
             tokio::fs::remove_dir_all(store_dir).await?;
             std::process::exit(130);
