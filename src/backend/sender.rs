@@ -34,14 +34,13 @@ pub async fn run_loop(
         tokio::select! {
             _ = connection.closed() => {
                 event_tx.send(BackendEvent::StatusUpdate("Receiver disconnected.".into())).await.ok();
-                println!("Receiver disconnected. Exiting sender loop.");
                 break;
             }
             cmd = command_rx.recv() => {
                 match cmd {
                     Some(TuiCommand::SyncPath(path)) => {
                         event_tx.send(BackendEvent::StatusUpdate(format!("Importing: {:?}", path))).await.ok();
-                        match send_notification(&connection, &store, path).await {
+                        match send_notification(&connection, &store, path, &event_tx).await {
                             Ok(tag) => {
                                 active_tags.push(tag);
                                 event_tx.send(BackendEvent::StatusUpdate("Sync metadata broadcast complete.".into())).await.ok();
@@ -60,13 +59,19 @@ pub async fn run_loop(
         }
     }
 
-    println!("Cleaning up...");
+    event_tx
+        .send(BackendEvent::StatusUpdate("Cleaning up...".into()))
+        .await
+        .ok();
 
     active_tags.clear();
     store.cleanup().await?;
     connection.close(0u8.into(), b"shutdown");
 
-    println!("Shutting down.");
+    event_tx
+        .send(BackendEvent::StatusUpdate("Shutting down.".into()))
+        .await
+        .ok();
 
     Ok(())
 }
@@ -75,25 +80,43 @@ async fn send_notification(
     connection: &Connection,
     store: &KeithStore,
     path: PathBuf,
+    event_tx: &mpsc::Sender<BackendEvent>,
 ) -> Result<TempTag> {
-    println!("Going to send notification");
+    event_tx
+        .send(BackendEvent::StatusUpdate(
+            "Going to send notification".into(),
+        ))
+        .await
+        .ok();
 
     let mut send_stream = connection
         .open_uni()
         .await
         .context("Failed to open stream")?;
 
-    println!("Got SendStream {}", send_stream.id());
+    event_tx
+        .send(BackendEvent::StatusUpdate(format!(
+            "Got SendStream {}",
+            send_stream.id()
+        )))
+        .await
+        .ok();
 
-    println!("Importing...");
+    event_tx
+        .send(BackendEvent::StatusUpdate("Importing...".into()))
+        .await
+        .ok();
 
     let tag = store.import(path.clone()).await?;
 
-    println!(
-        "Sending SyncCommand with hash {} and path {:?}",
-        tag.hash(),
-        path
-    );
+    event_tx
+        .send(BackendEvent::StatusUpdate(format!(
+            "Sending SyncCommand with hash {} and path {:?}",
+            tag.hash(),
+            path
+        )))
+        .await
+        .ok();
 
     let command = SyncCommand {
         hash_and_format: tag.hash_and_format(),
@@ -105,7 +128,10 @@ async fn send_notification(
         .finish()
         .context("Failed to close send stream")?;
 
-    println!("Sync command sent");
+    event_tx
+        .send(BackendEvent::StatusUpdate("Sync command sent".into()))
+        .await
+        .ok();
 
     Ok(tag)
 }

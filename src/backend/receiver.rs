@@ -94,7 +94,7 @@ pub async fn download_blob(
     {
         println!("Exporting to {first}...");
     }
-    store.export(collection).await?;
+    store.export(collection, command.path).await?;
     println!("Done.");
 
     Ok(())

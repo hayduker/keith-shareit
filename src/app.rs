@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use ratatui::{
@@ -17,6 +17,7 @@ pub struct App {
     tui_cmd_tx: mpsc::Sender<TuiCommand>,
     backend_event_rx: mpsc::Receiver<BackendEvent>,
     pub logs: Vec<String>,
+    pub root_path: String,
 }
 
 impl App {
@@ -30,6 +31,7 @@ impl App {
             tui_cmd_tx,
             backend_event_rx,
             logs: vec!["Initializing system...".into()],
+            root_path: String::from("/home/derek/newmusic"),
         }
     }
 
@@ -67,7 +69,17 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
-            KeyCode::Enter | KeyCode::Char(' ') => {
+            KeyCode::Enter => {
+                if let Some((selected, _)) = self.library_tree_state.selected().iter().last() {
+                    let full_path = PathBuf::from(self.root_path.clone()).join(selected);
+                    self.logs.push(format!("Path selected: {:?}", full_path));
+
+                    if let Err(e) = self.tui_cmd_tx.try_send(TuiCommand::SyncPath(full_path)) {
+                        self.logs.push(format!("Failed to notify backend: {}", e));
+                    }
+                }
+            }
+            KeyCode::Char(' ') => {
                 self.library_tree_state.toggle_selected();
             }
             KeyCode::Down => {

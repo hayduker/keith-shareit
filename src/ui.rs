@@ -30,17 +30,16 @@ impl App {
             .title_top(top_instructions.right_aligned())
             .border_set(border::THICK);
 
-        let root_path = String::from("/home/derek/newmusic");
-        let mut root_item = TreeItem::new_leaf((String::new(), false), root_path.clone());
+        let mut root_item = TreeItem::new_leaf((String::new(), false), self.root_path.clone());
 
-        for entry in WalkDir::new(root_path.clone()).sort_by_file_name() {
+        for entry in WalkDir::new(self.root_path.clone()).sort_by_file_name() {
             if entry.is_err() {
                 eprintln!("error with entry: {:?}", entry);
                 continue;
             }
             let entry = entry.unwrap();
 
-            let short_path = entry.path().strip_prefix(root_path.clone());
+            let short_path = entry.path().strip_prefix(self.root_path.clone());
             if short_path.is_err() {
                 eprintln!("error removing prefix: {:?}", entry);
                 continue;
