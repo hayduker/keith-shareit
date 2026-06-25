@@ -20,7 +20,6 @@ pub async fn run_loop(
     store: KeithStore,
     dst_dir: PathBuf,
 ) -> Result<()> {
-    // let connection = connection.clone();
     loop {
         println!("\nReceiver is listening for incoming SyncCommands...");
         tokio::select! {

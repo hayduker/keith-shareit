@@ -18,6 +18,7 @@ use std::{
 };
 use walkdir::WalkDir;
 
+#[derive(Clone)]
 pub struct KeithStore {
     pub tmp_dir: PathBuf,
     pub db: FsStore,
@@ -153,6 +154,8 @@ impl KeithStore {
         let _ = tokio::time::timeout(Duration::from_secs(2), self.db.shutdown())
             .await
             .context("Failed to shutown store");
+
+        println!("Removing tmp dir {:?}", self.tmp_dir);
         tokio::fs::remove_dir_all(&self.tmp_dir).await?;
         Ok(())
     }
