@@ -17,11 +17,12 @@ pub struct App {
     tui_cmd_tx: mpsc::Sender<TuiCommand>,
     backend_event_rx: mpsc::Receiver<BackendEvent>,
     pub logs: Vec<String>,
-    pub root_path: String,
+    pub src_path: PathBuf,
 }
 
 impl App {
     pub fn new(
+        src_path: PathBuf,
         tui_cmd_tx: mpsc::Sender<TuiCommand>,
         backend_event_rx: mpsc::Receiver<BackendEvent>,
     ) -> Self {
@@ -31,7 +32,7 @@ impl App {
             tui_cmd_tx,
             backend_event_rx,
             logs: vec!["Initializing system...".into()],
-            root_path: String::from("/home/derek/newmusic"),
+            src_path,
         }
     }
 
@@ -71,10 +72,13 @@ impl App {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Enter => {
                 if let Some((selected, _)) = self.library_tree_state.selected().iter().last() {
-                    let full_path = PathBuf::from(self.root_path.clone()).join(selected);
+                    let full_path = PathBuf::from(self.src_path.clone()).join(selected);
                     self.logs.push(format!("Path selected: {:?}", full_path));
 
-                    if let Err(e) = self.tui_cmd_tx.try_send(TuiCommand::SyncPath(full_path)) {
+                    if let Err(e) = self.tui_cmd_tx.try_send(TuiCommand::SyncPath(
+                        full_path,
+                        PathBuf::from(self.src_path.clone()),
+                    )) {
                         self.logs.push(format!("Failed to notify backend: {}", e));
                     }
                 }

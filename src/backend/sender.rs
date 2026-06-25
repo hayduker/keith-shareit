@@ -38,9 +38,9 @@ pub async fn run_loop(
             }
             cmd = command_rx.recv() => {
                 match cmd {
-                    Some(TuiCommand::SyncPath(path)) => {
-                        event_tx.send(BackendEvent::StatusUpdate(format!("Importing: {:?}", path))).await.ok();
-                        match send_notification(&connection, &store, path, &event_tx).await {
+                    Some(TuiCommand::SyncPath(full_path, root_path)) => {
+                        event_tx.send(BackendEvent::StatusUpdate(format!("Importing: {:?}", full_path))).await.ok();
+                        match send_notification(&connection, &store, full_path, root_path, &event_tx).await {
                             Ok(tag) => {
                                 active_tags.push(tag);
                                 event_tx.send(BackendEvent::StatusUpdate("Sync metadata broadcast complete.".into())).await.ok();
@@ -79,7 +79,8 @@ pub async fn run_loop(
 async fn send_notification(
     connection: &Connection,
     store: &KeithStore,
-    path: PathBuf,
+    full_path: PathBuf,
+    root_path: PathBuf,
     event_tx: &mpsc::Sender<BackendEvent>,
 ) -> Result<TempTag> {
     event_tx
@@ -107,20 +108,22 @@ async fn send_notification(
         .await
         .ok();
 
-    let tag = store.import(path.clone()).await?;
+    let tag = store.import(full_path.clone()).await?;
+
+    let relative_path = full_path.strip_prefix(root_path)?;
 
     event_tx
         .send(BackendEvent::StatusUpdate(format!(
             "Sending SyncCommand with hash {} and path {:?}",
             tag.hash(),
-            path
+            relative_path
         )))
         .await
         .ok();
 
     let command = SyncCommand {
         hash_and_format: tag.hash_and_format(),
-        path,
+        path: relative_path.to_path_buf(),
     };
     let payload = postcard::to_stdvec(&command)?;
     send_stream.write_all(&payload).await?;

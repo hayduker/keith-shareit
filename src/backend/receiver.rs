@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
 use iroh::{
     Endpoint, EndpointAddr,
@@ -16,6 +18,7 @@ pub async fn run_loop(
     endpoint: Endpoint,
     target_addr: EndpointAddr,
     store: KeithStore,
+    dst_dir: PathBuf,
 ) -> Result<()> {
     // let connection = connection.clone();
     loop {
@@ -34,7 +37,7 @@ pub async fn run_loop(
                                 println!("  HashAndFormat: {}", command.hash_and_format);
                                 println!("  Path: {:?}", command.path);
 
-                                download_blob(&endpoint, &store, &target_addr, command).await?;
+                                download_blob(&endpoint, &store, &target_addr, command, dst_dir.clone()).await?;
                             }
                             Err(e) => eprintln!("Failed to parse incoming stream data: {:?}", e),
                         }
@@ -56,6 +59,7 @@ pub async fn download_blob(
     store: &KeithStore,
     target_addr: &EndpointAddr,
     command: SyncCommand,
+    dst_dir: PathBuf,
 ) -> Result<()> {
     println!("Downloading blob...");
     let local = store.db.remote().local(command.hash_and_format).await?;
@@ -94,7 +98,7 @@ pub async fn download_blob(
     {
         println!("Exporting to {first}...");
     }
-    store.export(collection, command.path).await?;
+    store.export(collection, command.path, dst_dir).await?;
     println!("Done.");
 
     Ok(())

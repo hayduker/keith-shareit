@@ -112,17 +112,16 @@ impl KeithStore {
     pub async fn export(
         self: &KeithStore,
         collection: Collection,
-        full_src_path: PathBuf,
+        relative_path: PathBuf,
+        dst_dir: PathBuf,
     ) -> Result<()> {
-        let cwd = std::env::current_dir()?;
-        let root_path = PathBuf::from("/home/derek/newmusic");
-        let relative = full_src_path.strip_prefix(root_path)?;
-        let full_dst_path = cwd.join(relative);
-        let Some(parent) = full_dst_path.parent() else {
-            anyhow::bail!("Full destination path has no parent: {:?}", full_dst_path);
+        // let cwd = std::env::current_dir()?;
+        let dst_path = dst_dir.join(relative_path);
+        let Some(parent) = dst_path.parent() else {
+            anyhow::bail!("Full destination path has no parent: {:?}", dst_path);
         };
 
-        println!("Full destination: {:?}", full_dst_path);
+        println!("Full destination: {:?}", dst_path);
 
         for (name, hash) in collection.iter() {
             let target = Self::get_export_path(parent, name)?;

@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
+use iroh_blobs::ticket::BlobTicket;
+use std::path::PathBuf;
 
-/// Send files or directories from one machine to another upon selecting them from
-/// a directory tree rendered in a TUI.
+/// Send a file or directory between two machines, using blake3 verified streaming.
 #[derive(Parser, Debug)]
 #[command(version, about)]
 pub struct Args {
@@ -11,10 +12,22 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Pick files to send interactively.
-    Send,
+    /// Send files or directories.
+    Send(SendArgs),
 
-    /// Receive files passively.
+    /// Receive files or directories.
     #[clap(visible_alias = "recv")]
-    Receive,
+    Receive(ReceiveArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct SendArgs {
+    /// Path of directory to browse and send files from.
+    pub src_dir: PathBuf,
+}
+
+#[derive(Parser, Debug)]
+pub struct ReceiveArgs {
+    /// The directory in which to copy downloads.
+    pub dst_dir: PathBuf,
 }
