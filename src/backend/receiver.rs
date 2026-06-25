@@ -4,7 +4,7 @@ use iroh::{
     endpoint::{Connection, RecvStream},
 };
 use iroh_blobs::{
-    HashAndFormat, api::remote::GetProgressItem, format::collection::Collection,
+    api::remote::GetProgressItem, format::collection::Collection,
     get::request::get_hash_seq_and_sizes,
 };
 use n0_future::StreamExt;
@@ -12,22 +12,18 @@ use n0_future::StreamExt;
 use crate::{backend::sender::SyncCommand, store::KeithStore};
 
 pub async fn run_loop(
-    connection: &Connection,
-    endpoint: &Endpoint,
+    connection: Connection,
+    endpoint: Endpoint,
     target_addr: EndpointAddr,
-    store: &KeithStore,
+    store: KeithStore,
 ) -> Result<()> {
-    let connection = connection.clone();
+    // let connection = connection.clone();
     loop {
         println!("\nReceiver is listening for incoming SyncCommands...");
         tokio::select! {
             _ = connection.closed() => {
                 println!("Sender disconnected. Exiting receiver loop. {:?}", connection.close_reason());
                 break;
-            }
-            _ = tokio::signal::ctrl_c() => {
-                println!("Shutting down.");
-                connection.close(1u8.into(), b"done");
             }
             stream_result = connection.accept_uni() => {
                 match stream_result {
@@ -38,7 +34,7 @@ pub async fn run_loop(
                                 println!("  HashAndFormat: {}", command.hash_and_format);
                                 println!("  Path: {:?}", command.path);
 
-                                download_blob(endpoint, command.hash_and_format, target_addr.clone(), store).await?;
+                                download_blob(&endpoint, &store, &target_addr, command).await?;
                             }
                             Err(e) => eprintln!("Failed to parse incoming stream data: {:?}", e),
                         }
@@ -57,72 +53,49 @@ pub async fn run_loop(
 
 pub async fn download_blob(
     endpoint: &Endpoint,
-    hash_and_format: HashAndFormat,
-    target_addr: EndpointAddr,
     store: &KeithStore,
+    target_addr: &EndpointAddr,
+    command: SyncCommand,
 ) -> Result<()> {
-    let download_future = async {
-        println!("Downloading blob...");
-        let local = store.db.remote().local(hash_and_format).await?;
-        if !local.is_complete() {
-            let connection = endpoint
-                .connect(target_addr, iroh_blobs::protocol::ALPN)
-                .await?;
+    println!("Downloading blob...");
+    let local = store.db.remote().local(command.hash_and_format).await?;
+    if !local.is_complete() {
+        let connection = endpoint
+            .connect(target_addr.clone(), iroh_blobs::protocol::ALPN)
+            .await?;
 
-            println!("Made blob connection back to sender");
-            println!("Downloading...");
+        println!("Made blob connection back to sender");
+        println!("Downloading...");
 
-            get_hash_seq_and_sizes(&connection, &hash_and_format.hash, 1024 * 1024 * 32, None)
-                .await?;
+        get_hash_seq_and_sizes(
+            &connection,
+            &command.hash_and_format.hash,
+            1024 * 1024 * 32,
+            None,
+        )
+        .await?;
 
-            let get = store.db.remote().execute_get(connection, local.missing());
-            let mut stream = get.stream();
+        let get = store.db.remote().execute_get(connection, local.missing());
+        let mut stream = get.stream();
 
-            while let Some(item) = stream.next().await {
-                match item {
-                    GetProgressItem::Done(_) => {
-                        break;
-                    }
-                    GetProgressItem::Error(cause) => {
-                        anyhow::bail!("iroh get error {:?}", cause);
-                    }
-                    _ => (),
-                }
+        while let Some(item) = stream.next().await {
+            if let GetProgressItem::Error(cause) = item {
+                anyhow::bail!("Iroh fetch error: {:?}", cause);
             }
-        };
-
-        println!("Download complete.");
-
-        let collection = Collection::load(hash_and_format.hash, store.db.as_ref()).await?;
-
-        if let Some((name, _)) = collection.iter().next()
-            && let Some(first) = name.split('/').next()
-        {
-            println!("Exporting to {first}...");
-        }
-        store.export(collection).await?;
-        println!("Done.");
-
-        Ok(())
-    };
-
-    tokio::select! {
-        x = download_future => match x {
-            Ok(_) => {}
-            Err(e) => {
-                store.db.shutdown().await?;
-                eprintln!("Error: {e}");
-                tokio::fs::remove_dir_all(&store.tmp_dir).await?;
-                std::process::exit(1);
-            }
-        },
-        _ = tokio::signal::ctrl_c() => {
-            println!("Shutting down.");
-            store.db.shutdown().await?;
-            tokio::fs::remove_dir_all(&store.tmp_dir).await?;
-            std::process::exit(130);
         }
     };
+
+    println!("Download complete.");
+
+    let collection = Collection::load(command.hash_and_format.hash, store.db.as_ref()).await?;
+
+    if let Some((name, _)) = collection.iter().next()
+        && let Some(first) = name.split('/').next()
+    {
+        println!("Exporting to {first}...");
+    }
+    store.export(collection).await?;
+    println!("Done.");
 
     Ok(())
 }

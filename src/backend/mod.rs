@@ -1,6 +1,4 @@
-use anyhow::Result;
 use iroh::EndpointId;
-use iroh_blobs::HashAndFormat;
 use std::path::PathBuf;
 
 #[derive(Debug)]
