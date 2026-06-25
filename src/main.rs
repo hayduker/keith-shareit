@@ -2,13 +2,13 @@ use clap::Parser;
 
 use crate::{
     app::App,
+    backend::endpoint::{create_endpoint, establish_connection},
     cli::{Args, Commands},
-    endpoint::{create_endpoint, make_connection},
 };
 
 mod app;
+mod backend;
 mod cli;
-mod endpoint;
 mod requester;
 mod secret;
 mod store;
@@ -23,11 +23,11 @@ async fn main() -> anyhow::Result<()> {
     let result = match args.command {
         Commands::Send => {
             let (endpoint, mdns, store, router) = create_endpoint(true).await?;
-            make_connection(&endpoint, mdns, &store, true).await
+            establish_connection(&endpoint, mdns, &store, true).await
         }
         Commands::Receive => {
             let (endpoint, mdns, store, _) = create_endpoint(false).await?;
-            make_connection(&endpoint, mdns, &store, false).await
+            establish_connection(&endpoint, mdns, &store, false).await
         }
     };
 

@@ -14,12 +14,9 @@ impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         let title = Line::from(" Library ".bold());
         let top_instructions = Line::from(vec![" Quit ".into(), "<q> ".blue().bold()]);
-        let bottom_instructions =
-            Line::from(vec![" Navigate ".into(), "<↑ ↓ space> ".blue().bold()]);
         let block = Block::bordered()
             .title(title.centered())
             .title_top(top_instructions.right_aligned())
-            .title_bottom(bottom_instructions.right_aligned())
             .border_set(border::THICK);
 
         let root_path = String::from("/home/derek/newmusic");
