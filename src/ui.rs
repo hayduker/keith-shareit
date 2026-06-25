@@ -1,9 +1,10 @@
 use ratatui::{
     Frame,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::border,
     text::Line,
-    widgets::{Block, Scrollbar, ScrollbarOrientation},
+    widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, Wrap},
 };
 use tui_tree_widget::{Tree, TreeItem};
 use walkdir::WalkDir;
@@ -12,6 +13,16 @@ use crate::app::App;
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(frame.area());
+
+        self.render_tree(frame, chunks[0]);
+        self.render_log(frame, chunks[1]);
+    }
+
+    fn render_tree(&mut self, frame: &mut Frame, area: Rect) {
         let title = Line::from(" Library ".bold());
         let top_instructions = Line::from(vec![" Quit ".into(), "<q> ".blue().bold()]);
         let block = Block::bordered()
@@ -95,6 +106,29 @@ impl App {
             .node_open_symbol("⏷ ")
             .block(block);
 
-        frame.render_stateful_widget(tree, frame.area(), &mut self.library_tree_state);
+        frame.render_stateful_widget(tree, area, &mut self.library_tree_state);
+    }
+
+    fn render_log(&mut self, frame: &mut Frame, area: Rect) {
+        let title = Line::from(" Logs ").bold().magenta();
+        let block = Block::bordered()
+            .title(title.centered())
+            .border_set(border::THICK);
+
+        let lines: Vec<Line> = self
+            .logs
+            .iter()
+            .map(|log_str| Line::from(log_str.clone().dark_gray()))
+            .collect();
+
+        let available_height = area.height as usize;
+        let vertical_scroll = lines.len().saturating_sub(available_height - 2);
+
+        let paragraph = Paragraph::new(lines)
+            .block(block)
+            .scroll((vertical_scroll as u16, 0))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(paragraph, area);
     }
 }

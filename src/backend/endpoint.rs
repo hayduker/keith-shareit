@@ -14,8 +14,9 @@ use crate::{backend::BackendEvent, secret::get_or_create_secret, store::KeithSto
 const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 
 pub async fn create_endpoint(
-    sender: bool,
+    is_sender: bool,
     store: &KeithStore,
+    event_tx: &mpsc::Sender<BackendEvent>,
 ) -> Result<(Endpoint, MdnsAddressLookup, Option<Router>)> {
     let secret_key = get_or_create_secret()?;
 
@@ -28,18 +29,42 @@ pub async fn create_endpoint(
         .bind()
         .await?;
 
-    println!("Endpoint created with id: {}", endpoint.id());
+    if is_sender {
+        event_tx
+            .send(BackendEvent::StatusUpdate(format!(
+                "Endpoint created with id: {}",
+                endpoint.id()
+            )))
+            .await
+            .ok();
+    } else {
+        println!("Endpoint created with id: {}", endpoint.id());
+    }
 
     let mdns = MdnsAddressLookup::builder().build(endpoint.id()).unwrap();
     endpoint.address_lookup().unwrap().add(mdns.clone());
 
-    println!("Creating store");
+    if is_sender {
+        event_tx
+            .send(BackendEvent::StatusUpdate("Creating store".into()))
+            .await
+            .ok();
+    } else {
+        println!("Creating store");
+    }
 
     let blobs = BlobsProtocol::new(&store.db, None);
 
-    println!("Creating router");
+    if is_sender {
+        event_tx
+            .send(BackendEvent::StatusUpdate("Creating router".into()))
+            .await
+            .ok();
+    } else {
+        println!("Creating router");
+    }
 
-    let router = if sender {
+    let router = if is_sender {
         Some(
             Router::builder(endpoint.clone())
                 .accept(iroh_blobs::ALPN, blobs)
@@ -55,7 +80,7 @@ pub async fn create_endpoint(
 pub async fn establish_connection(
     endpoint: &Endpoint,
     mdns: MdnsAddressLookup,
-    sender: bool,
+    is_sender: bool,
     event_tx: &mpsc::Sender<BackendEvent>,
 ) -> Result<(Connection, EndpointAddr)> {
     let mut events = mdns.subscribe().await;
@@ -67,18 +92,39 @@ pub async fn establish_connection(
         .await
         .ok();
 
-    println!("Starting discovery phase...");
+    if is_sender {
+        event_tx
+            .send(BackendEvent::StatusUpdate(
+                "Starting discovery phase...".into(),
+            ))
+            .await
+            .ok();
+    } else {
+        println!("Starting discovery phase...");
+    }
 
     while let Some(event) = events.next().await {
         if let DiscoveryEvent::Discovered { endpoint_info, .. } = event {
             let target_addr = endpoint_info.into_endpoint_addr();
-            println!("MDNS discovered: {}", target_addr.id);
+
+            if is_sender {
+                event_tx
+                    .send(BackendEvent::StatusUpdate(format!(
+                        "mDNS discovered {}",
+                        target_addr.id
+                    )))
+                    .await
+                    .ok();
+            } else {
+                println!("MDNS discovered: {}", target_addr.id);
+            }
+
             event_tx
                 .send(BackendEvent::PeerDiscovered(target_addr.id))
                 .await
                 .ok();
 
-            let connection = if sender {
+            let connection = if is_sender {
                 endpoint.connect(target_addr.clone(), SYNC_ALPN).await?
             } else {
                 endpoint
