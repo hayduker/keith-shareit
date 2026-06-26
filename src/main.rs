@@ -33,15 +33,14 @@ async fn run_sender(src_dir: PathBuf) -> Result<()> {
     let (backend_event_tx, backend_event_rx) = tokio::sync::mpsc::channel(100);
 
     let store = KeithStore::new().await?;
-    let store_cp = store.clone();
 
     tokio::spawn(async move {
         if let Ok((endpoint, mdns, _router)) =
-            create_endpoint(true, &store_cp, &backend_event_tx).await
+            create_endpoint(true, &store, &backend_event_tx).await
             && let Ok((connection, _)) =
                 establish_connection(&endpoint, mdns, true, &backend_event_tx).await
         {
-            sender::run_loop(connection, store_cp, tui_cmd_rx, backend_event_tx).await
+            sender::run_loop(connection, store, tui_cmd_rx, backend_event_tx).await
         } else {
             anyhow::bail!("Failed to establish endpoint or connection.");
         }
@@ -52,24 +51,30 @@ async fn run_sender(src_dir: PathBuf) -> Result<()> {
         app.run(terminal)
     })?;
 
-    store.cleanup().await?;
-
     Ok(())
 }
 
 async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
+    let (tui_cmd_tx, tui_cmd_rx) = tokio::sync::mpsc::channel(100);
     let (backend_event_tx, mut _backend_event_rx) = tokio::sync::mpsc::channel(100);
 
     let store = KeithStore::new().await?;
-    let store_cp = store.clone();
 
-    tokio::spawn(async move {
+    let backend_handle = tokio::spawn(async move {
         if let Ok((endpoint, mdns, _router)) =
-            create_endpoint(false, &store_cp, &backend_event_tx).await
+            create_endpoint(false, &store, &backend_event_tx).await
             && let Ok((connection, target_addr)) =
                 establish_connection(&endpoint, mdns, false, &backend_event_tx).await
         {
-            receiver::run_loop(connection, endpoint, target_addr, store_cp, dst_dir).await
+            receiver::run_loop(
+                connection,
+                endpoint,
+                target_addr,
+                store,
+                dst_dir,
+                tui_cmd_rx,
+            )
+            .await
         } else {
             anyhow::bail!("Failed to establish endpoint or connection.");
         }
@@ -77,8 +82,10 @@ async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
 
     tokio::signal::ctrl_c().await?;
     println!("Shutting down receiver.");
-
-    store.cleanup().await?;
+    tui_cmd_tx.send(backend::TuiCommand::Shutdown).await?;
+    println!("Send shutdown msg to backend, waiting for it to finish");
+    let _ = backend_handle.await?;
+    println!("Done!");
 
     Ok(())
 }

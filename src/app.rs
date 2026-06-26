@@ -72,13 +72,13 @@ impl App {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Enter => {
                 if let Some((selected, _)) = self.library_tree_state.selected().iter().last() {
-                    let full_path = PathBuf::from(self.src_path.clone()).join(selected);
+                    let full_path = self.src_path.clone().join(selected);
                     self.logs.push(format!("Path selected: {:?}", full_path));
 
-                    if let Err(e) = self.tui_cmd_tx.try_send(TuiCommand::SyncPath(
-                        full_path,
-                        PathBuf::from(self.src_path.clone()),
-                    )) {
+                    if let Err(e) = self
+                        .tui_cmd_tx
+                        .try_send(TuiCommand::SyncPath(full_path, self.src_path.clone()))
+                    {
                         self.logs.push(format!("Failed to notify backend: {}", e));
                     }
                 }

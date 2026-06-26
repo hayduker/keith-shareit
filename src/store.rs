@@ -12,10 +12,7 @@ use iroh_blobs::{
 };
 use n0_future::StreamExt;
 use rand::RngExt;
-use std::{
-    path::{Component, Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
 #[derive(Clone)]
@@ -150,16 +147,6 @@ impl KeithStore {
         Ok(())
     }
 
-    pub async fn cleanup(self: &KeithStore) -> Result<()> {
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.db.shutdown())
-            .await
-            .context("Failed to shutown store");
-
-        println!("Removing tmp dir {:?}", self.tmp_dir);
-        tokio::fs::remove_dir_all(&self.tmp_dir).await?;
-        Ok(())
-    }
-
     /// This function converts an already canonicalized path to a string.
     ///
     /// If `must_be_relative` is true, the function will fail if any component of the path is
@@ -237,5 +224,13 @@ impl KeithStore {
             "path components must not contain the only correct path separator, /"
         );
         Ok(())
+    }
+}
+
+impl Drop for KeithStore {
+    fn drop(&mut self) {
+        if std::fs::remove_dir_all(self.tmp_dir.clone()).is_err() {
+            eprintln!("Failed to delete dir {:?}", self.tmp_dir);
+        }
     }
 }

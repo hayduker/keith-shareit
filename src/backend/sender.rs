@@ -65,7 +65,6 @@ pub async fn run_loop(
         .ok();
 
     active_tags.clear();
-    store.cleanup().await?;
     connection.close(0u8.into(), b"shutdown");
 
     event_tx
