@@ -5,18 +5,19 @@ use clap::Parser;
 
 use crate::{
     app::App,
-    backend::{
-        endpoint::{create_endpoint, establish_connection},
-        receiver, sender,
-    },
     cli::{Args, Commands},
+    endpoint::{create_endpoint, establish_connection},
+    event::TuiCommand,
     store::KeithStore,
 };
 
 mod app;
-mod backend;
 mod cli;
+mod endpoint;
+mod event;
+mod receiver;
 mod secret;
+mod sender;
 mod store;
 mod ui;
 
@@ -82,7 +83,7 @@ async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
 
     tokio::signal::ctrl_c().await?;
     println!("Shutting down receiver.");
-    tui_cmd_tx.send(backend::TuiCommand::Shutdown).await?;
+    tui_cmd_tx.send(TuiCommand::Shutdown).await?;
     println!("Send shutdown msg to backend, waiting for it to finish");
     let _ = backend_handle.await?;
     println!("It finished!");

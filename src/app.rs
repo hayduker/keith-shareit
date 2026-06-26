@@ -8,7 +8,7 @@ use ratatui::{
 use tokio::sync::mpsc;
 use tui_tree_widget::TreeState;
 
-use crate::backend::{BackendEvent, TuiCommand};
+use crate::event::{BackendEvent, TuiCommand};
 
 #[derive(Debug)]
 pub struct App {

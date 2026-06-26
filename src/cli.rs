@@ -28,6 +28,10 @@ pub struct SendArgs {
 #[derive(Parser, Debug)]
 pub struct ReceiveArgs {
     /// The directory in which to copy downloads.
-    #[arg(long, default_value = "/data/data/com.termux/files/home/shared_music")]
+    #[arg(
+        short,
+        long,
+        default_value = "/data/data/com.termux/files/home/shared_music"
+    )]
     pub dst_dir: PathBuf,
 }

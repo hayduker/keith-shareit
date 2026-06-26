@@ -6,7 +6,7 @@ use std::{ffi::OsStr, path::PathBuf};
 use tokio::sync::mpsc;
 
 use crate::{
-    backend::{BackendEvent, TuiCommand},
+    event::{BackendEvent, TuiCommand},
     store::KeithStore,
 };
 

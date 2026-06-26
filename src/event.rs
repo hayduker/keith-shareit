@@ -14,7 +14,3 @@ pub enum BackendEvent {
     _DownloadComplete,
     StatusUpdate(String),
 }
-
-pub mod endpoint;
-pub mod receiver;
-pub mod sender;

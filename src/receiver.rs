@@ -16,10 +16,8 @@ use n0_future::StreamExt;
 use tokio::sync::mpsc;
 
 use crate::{
-    backend::{
-        TuiCommand,
-        sender::{SyncCommand, shortened_hash},
-    },
+    event::TuiCommand,
+    sender::{SyncCommand, shortened_hash},
     store::KeithStore,
 };
 
@@ -126,7 +124,7 @@ pub async fn download_blob(
     if let Some((name, _)) = collection.iter().next()
         && let Some(first) = name.split('/').next()
     {
-        println!("Exporting to: '{first}'...");
+        println!("Exporting to: '{first}'");
     }
     store.export(collection, command.path, dst_dir).await?;
     println!("Export complete");
