@@ -85,7 +85,7 @@ async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
     tui_cmd_tx.send(backend::TuiCommand::Shutdown).await?;
     println!("Send shutdown msg to backend, waiting for it to finish");
     let _ = backend_handle.await?;
-    println!("Done!");
+    println!("It finished!");
 
     Ok(())
 }

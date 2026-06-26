@@ -12,10 +12,7 @@ use iroh_blobs::{
 };
 use n0_future::StreamExt;
 use rand::RngExt;
-use std::{
-    ffi::OsStr,
-    path::{Component, Path, PathBuf},
-};
+use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
 #[derive(Clone)]

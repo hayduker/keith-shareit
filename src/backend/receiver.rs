@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
 
 use anyhow::{Context, Result};
 use iroh::{
@@ -38,6 +41,7 @@ pub async fn run_loop(
             }
             command = command_rx.recv() => {
                 if let Some(TuiCommand::Shutdown) = command {
+                    println!("got shutdown from main");
                     return Ok(());
                 }
             }
@@ -81,21 +85,38 @@ pub async fn download_blob(
             .await?;
 
         println!("Made connection back to sender");
-        println!("Downloading blob");
-        get_hash_seq_and_sizes(
+
+        let (_, sizes) = get_hash_seq_and_sizes(
             &connection,
             &command.hash_and_format.hash,
             1024 * 1024 * 32,
             None,
         )
         .await?;
+        let total_size = sizes.iter().copied().sum::<u64>();
 
         let get = store.db.remote().execute_get(connection, local.missing());
         let mut stream = get.stream();
 
+        let mut next_checkpoint = 0;
+
         while let Some(item) = stream.next().await {
-            if let GetProgressItem::Error(cause) = item {
-                anyhow::bail!("Iroh fetch error: {:?}", cause);
+            match item {
+                GetProgressItem::Progress(offset) => {
+                    let percentage = 100 * offset / total_size;
+                    if percentage > next_checkpoint && next_checkpoint < 100 {
+                        print!("\rDownloading blob: {percentage}%");
+                        io::stdout().flush()?;
+
+                        next_checkpoint += 1;
+                    }
+                }
+                GetProgressItem::Done(_) => {
+                    println!("\nDownload complete");
+                }
+                GetProgressItem::Error(cause) => {
+                    anyhow::bail!("Iroh fetch error: {:?}", cause);
+                }
             }
         }
     };
@@ -105,7 +126,7 @@ pub async fn download_blob(
     if let Some((name, _)) = collection.iter().next()
         && let Some(first) = name.split('/').next()
     {
-        println!("Download complete, exporting to: '{first}'...");
+        println!("Exporting to: '{first}'...");
     }
     store.export(collection, command.path, dst_dir).await?;
     println!("Export complete");
