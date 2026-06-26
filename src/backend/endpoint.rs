@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use iroh::{
-    Endpoint, EndpointAddr,
+    Endpoint, EndpointAddr, EndpointId,
     endpoint::{Connection, presets},
     protocol::Router,
 };
@@ -29,41 +29,17 @@ pub async fn create_endpoint(
         .bind()
         .await?;
 
-    if is_sender {
-        event_tx
-            .send(BackendEvent::StatusUpdate(format!(
-                "Endpoint created with id: {}",
-                endpoint.id()
-            )))
-            .await
-            .ok();
-    } else {
-        println!("Endpoint created with id: {}", endpoint.id());
-    }
+    log_message(
+        &format!("Endpoint created with id: {}", shortened_id(&endpoint.id())),
+        is_sender,
+        event_tx,
+    )
+    .await;
 
     let mdns = MdnsAddressLookup::builder().build(endpoint.id()).unwrap();
     endpoint.address_lookup().unwrap().add(mdns.clone());
 
-    if is_sender {
-        event_tx
-            .send(BackendEvent::StatusUpdate("Creating store".into()))
-            .await
-            .ok();
-    } else {
-        println!("Creating store");
-    }
-
     let blobs = BlobsProtocol::new(&store.db, None);
-
-    if is_sender {
-        event_tx
-            .send(BackendEvent::StatusUpdate("Creating router".into()))
-            .await
-            .ok();
-    } else {
-        println!("Creating router");
-    }
-
     let router = if is_sender {
         Some(
             Router::builder(endpoint.clone())
@@ -85,44 +61,21 @@ pub async fn establish_connection(
 ) -> Result<(Connection, EndpointAddr)> {
     let mut events = mdns.subscribe().await;
 
-    event_tx
-        .send(BackendEvent::StatusUpdate(
-            "Searching for peers via mDNS...".into(),
-        ))
-        .await
-        .ok();
-
-    if is_sender {
-        event_tx
-            .send(BackendEvent::StatusUpdate(
-                "Starting discovery phase...".into(),
-            ))
-            .await
-            .ok();
-    } else {
-        println!("Starting discovery phase...");
-    }
+    log_message("Searching for peers", is_sender, event_tx).await;
 
     while let Some(event) = events.next().await {
         if let DiscoveryEvent::Discovered { endpoint_info, .. } = event {
             let target_addr = endpoint_info.into_endpoint_addr();
 
-            if is_sender {
-                event_tx
-                    .send(BackendEvent::StatusUpdate(format!(
-                        "mDNS discovered {}",
-                        target_addr.id
-                    )))
-                    .await
-                    .ok();
-            } else {
-                println!("MDNS discovered: {}", target_addr.id);
-            }
-
-            event_tx
-                .send(BackendEvent::PeerDiscovered(target_addr.id))
-                .await
-                .ok();
+            log_message(
+                &format!(
+                    "Discovered endpoint with id: {}",
+                    shortened_id(&target_addr.id)
+                ),
+                is_sender,
+                event_tx,
+            )
+            .await;
 
             let connection = if is_sender {
                 endpoint.connect(target_addr.clone(), SYNC_ALPN).await?
@@ -136,8 +89,28 @@ pub async fn establish_connection(
             };
 
             event_tx.send(BackendEvent::ConnectionSecured).await.ok();
+
             return Ok((connection, target_addr));
         }
     }
     anyhow::bail!("mDNS discovery stream ended without finding a peer");
+}
+
+async fn log_message(msg: &str, is_sender: bool, event_tx: &mpsc::Sender<BackendEvent>) {
+    if is_sender {
+        event_tx
+            .send(BackendEvent::StatusUpdate(msg.into()))
+            .await
+            .ok();
+    } else {
+        println!("{}", msg);
+    }
+}
+
+fn shortened_id(id: &EndpointId) -> String {
+    id.to_string()
+        .get(0..8)
+        .expect("Couldn't shorten endpoint ID")
+        .to_string()
+        + "..."
 }

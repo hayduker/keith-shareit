@@ -13,7 +13,10 @@ use n0_future::StreamExt;
 use tokio::sync::mpsc;
 
 use crate::{
-    backend::{TuiCommand, sender::SyncCommand},
+    backend::{
+        TuiCommand,
+        sender::{SyncCommand, shortened_hash},
+    },
     store::KeithStore,
 };
 
@@ -25,17 +28,16 @@ pub async fn run_loop(
     dst_dir: PathBuf,
     mut command_rx: mpsc::Receiver<TuiCommand>,
 ) -> Result<()> {
-    println!("run_loop receiver called");
     loop {
-        println!("\nReceiver is listening for incoming SyncCommands...");
+        println!("\nReceiver awaiting next incoming sync commands");
+
         tokio::select! {
             _ = connection.closed() => {
-                println!("Sender disconnected. Exiting receiver loop. {:?}", connection.close_reason());
+                println!("Sender disconnected, shutting down");
                 return Ok(());
             }
             command = command_rx.recv() => {
                 if let Some(TuiCommand::Shutdown) = command {
-                    println!("Got shutdown from ui, returning");
                     return Ok(());
                 }
             }
@@ -44,9 +46,9 @@ pub async fn run_loop(
                     Ok(mut recv_stream) => {
                         match read_command_from_stream(&mut recv_stream).await {
                             Ok(command) => {
-                                println!("Received a new target hash");
-                                println!("  HashAndFormat: {}", command.hash_and_format);
-                                println!("  Path: {:?}", command.path);
+                                println!("Received sync command for hash: {}", shortened_hash(&command.hash_and_format.hash));
+                                // println!("  HashAndFormat: {}", command.hash_and_format);
+                                // println!("  Path: {:?}", command.path);
 
                                 download_blob(&endpoint, &store, &target_addr, command, dst_dir.clone()).await?;
                             }
@@ -62,8 +64,6 @@ pub async fn run_loop(
         }
     }
 
-    println!("Exiting receiver run_loop");
-
     Ok(())
 }
 
@@ -74,16 +74,14 @@ pub async fn download_blob(
     command: SyncCommand,
     dst_dir: PathBuf,
 ) -> Result<()> {
-    println!("Downloading blob...");
     let local = store.db.remote().local(command.hash_and_format).await?;
     if !local.is_complete() {
         let connection = endpoint
             .connect(target_addr.clone(), iroh_blobs::protocol::ALPN)
             .await?;
 
-        println!("Made blob connection back to sender");
-        println!("Downloading...");
-
+        println!("Made connection back to sender");
+        println!("Downloading blob");
         get_hash_seq_and_sizes(
             &connection,
             &command.hash_and_format.hash,
@@ -102,17 +100,15 @@ pub async fn download_blob(
         }
     };
 
-    println!("Download complete.");
-
     let collection = Collection::load(command.hash_and_format.hash, store.db.as_ref()).await?;
 
     if let Some((name, _)) = collection.iter().next()
         && let Some(first) = name.split('/').next()
     {
-        println!("Exporting to {first}...");
+        println!("Download complete, exporting to: '{first}'...");
     }
     store.export(collection, command.path, dst_dir).await?;
-    println!("Done.");
+    println!("Export complete");
 
     Ok(())
 }

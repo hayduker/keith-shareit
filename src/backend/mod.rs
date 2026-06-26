@@ -1,4 +1,3 @@
-use iroh::EndpointId;
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -9,10 +8,10 @@ pub enum TuiCommand {
 
 #[derive(Debug, Clone)]
 pub enum BackendEvent {
-    PeerDiscovered(EndpointId),
+    _PeerDiscovered,
     ConnectionSecured,
-    DownloadStarted,
-    DownloadComplete,
+    _DownloadStarted,
+    _DownloadComplete,
     StatusUpdate(String),
 }
 

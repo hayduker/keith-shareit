@@ -12,7 +12,10 @@ use iroh_blobs::{
 };
 use n0_future::StreamExt;
 use rand::RngExt;
-use std::path::{Component, Path, PathBuf};
+use std::{
+    ffi::OsStr,
+    path::{Component, Path, PathBuf},
+};
 use walkdir::WalkDir;
 
 #[derive(Clone)]
@@ -119,21 +122,15 @@ impl KeithStore {
             anyhow::bail!("Full destination path has no parent: {:?}", dst_path);
         };
 
-        println!("Full destination: {:?}", dst_path);
-
+        let mut removed_existing = false;
         for (name, hash) in collection.iter() {
             let target = Self::get_export_path(parent, name)?;
             if target.exists() {
-                if target.is_dir() {
-                    println!(
-                        "Removing existing directory at export location: {:?}",
-                        target
-                    );
-                    tokio::fs::remove_dir_all(target.clone()).await?;
-                } else if target.is_file() {
-                    println!("Removing existing file at export location: {:?}", target);
-                    tokio::fs::remove_file(target.clone()).await?;
+                if !removed_existing {
+                    println!("Removing existing file(s)");
+                    removed_existing = true;
                 }
+                tokio::fs::remove_file(target.clone()).await?;
             }
             let _ = self
                 .db

@@ -110,7 +110,7 @@ impl App {
     }
 
     fn render_log(&mut self, frame: &mut Frame, area: Rect) {
-        let title = Line::from(" Logs ").bold().magenta();
+        let title = Line::from(" Log ").bold().magenta();
         let block = Block::bordered()
             .title(title.centered())
             .border_set(border::THICK);

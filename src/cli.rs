@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use iroh_blobs::ticket::BlobTicket;
 use std::path::PathBuf;
 
 /// Send a file or directory between two machines, using blake3 verified streaming.

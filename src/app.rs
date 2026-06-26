@@ -31,11 +31,12 @@ impl App {
             should_exit: false,
             tui_cmd_tx,
             backend_event_rx,
-            logs: vec!["Initializing system...".into()],
+            logs: vec![],
             src_path,
         }
     }
 
+    #[allow(clippy::single_match)]
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_exit {
             terminal.draw(|frame| self.render(frame))?;
@@ -43,9 +44,9 @@ impl App {
             while let Ok(event) = self.backend_event_rx.try_recv() {
                 match event {
                     BackendEvent::StatusUpdate(msg) => self.logs.push(msg),
-                    BackendEvent::ConnectionSecured => self.logs.push("Connected to Peer!".into()),
-                    BackendEvent::DownloadStarted => self.logs.push("Downloading data...".into()),
-                    BackendEvent::DownloadComplete => self.logs.push("Download Complete!".into()),
+                    // BackendEvent::ConnectionSecured => self.logs.push("Connected to Peer!".into()),
+                    // BackendEvent::DownloadStarted => self.logs.push("Downloading data...".into()),
+                    // BackendEvent::DownloadComplete => self.logs.push("Download Complete!".into()),
                     _ => {}
                 }
             }
@@ -73,7 +74,6 @@ impl App {
             KeyCode::Enter => {
                 if let Some((selected, _)) = self.library_tree_state.selected().iter().last() {
                     let full_path = self.src_path.clone().join(selected);
-                    self.logs.push(format!("Path selected: {:?}", full_path));
 
                     if let Err(e) = self
                         .tui_cmd_tx
