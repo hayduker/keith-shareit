@@ -9,5 +9,6 @@ pub enum BackendEvent {
 
 pub mod endpoint;
 pub mod receiver;
+pub mod secret;
 pub mod sender;
 pub mod store;

@@ -1,2 +1,5 @@
 /target
 .direnv
+b/
+tocopy.txt
+endpoint.key
