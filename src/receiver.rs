@@ -13,10 +13,8 @@ use iroh_blobs::{
     get::request::get_hash_seq_and_sizes,
 };
 use n0_future::StreamExt;
-use tokio::sync::mpsc;
 
 use crate::{
-    event::TuiCommand,
     sender::{SyncCommand, shortened_hash},
     store::KeithStore,
 };
@@ -27,7 +25,6 @@ pub async fn run_loop(
     target_addr: EndpointAddr,
     store: KeithStore,
     dst_dir: PathBuf,
-    mut command_rx: mpsc::Receiver<TuiCommand>,
 ) -> Result<()> {
     loop {
         println!("\nReceiver awaiting next incoming sync commands");
@@ -36,12 +33,6 @@ pub async fn run_loop(
             _ = connection.closed() => {
                 println!("Sender disconnected, shutting down");
                 return Ok(());
-            }
-            command = command_rx.recv() => {
-                if let Some(TuiCommand::Shutdown) = command {
-                    println!("got shutdown from main");
-                    return Ok(());
-                }
             }
             stream_result = connection.accept_uni() => {
                 match stream_result {

@@ -34,18 +34,13 @@ async fn run_sender(src_dir: PathBuf) -> Result<()> {
     let (tui_cmd_tx, tui_cmd_rx) = tokio::sync::mpsc::channel(100);
     let (backend_event_tx, backend_event_rx) = tokio::sync::mpsc::channel(100);
 
-    let store = KeithStore::new().await?;
-
     tokio::spawn(async move {
-        if let Ok((endpoint, mdns, _router)) =
-            create_endpoint(true, &store, &backend_event_tx).await
-            && let Ok((connection, _)) =
-                establish_connection(&endpoint, mdns, true, &backend_event_tx).await
-        {
-            sender::run_loop(connection, store, tui_cmd_rx, backend_event_tx).await
-        } else {
-            anyhow::bail!("Failed to establish endpoint or connection.");
-        }
+        let store = KeithStore::new().await?;
+        let (endpoint, mdns, _router) = create_endpoint(true, &store, &backend_event_tx).await?;
+        let (connection, _) =
+            establish_connection(&endpoint, mdns, true, &backend_event_tx).await?;
+
+        sender::run_loop(connection, store, tui_cmd_rx, backend_event_tx).await
     });
 
     ratatui::run(|terminal| {
@@ -57,37 +52,25 @@ async fn run_sender(src_dir: PathBuf) -> Result<()> {
 }
 
 async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
-    let (tui_cmd_tx, tui_cmd_rx) = tokio::sync::mpsc::channel(100);
-    let (backend_event_tx, mut _backend_event_rx) = tokio::sync::mpsc::channel(100);
+    let (backend_event_tx, _) = tokio::sync::mpsc::channel(100);
 
-    let store = KeithStore::new().await?;
+    let run_backend = async move {
+        let store = KeithStore::new().await?;
+        let (endpoint, mdns, _router) = create_endpoint(false, &store, &backend_event_tx).await?;
+        let (connection, target_addr) =
+            establish_connection(&endpoint, mdns, false, &backend_event_tx).await?;
 
-    let backend_handle = tokio::spawn(async move {
-        if let Ok((endpoint, mdns, _router)) =
-            create_endpoint(false, &store, &backend_event_tx).await
-            && let Ok((connection, target_addr)) =
-                establish_connection(&endpoint, mdns, false, &backend_event_tx).await
-        {
-            receiver::run_loop(
-                connection,
-                endpoint,
-                target_addr,
-                store,
-                dst_dir,
-                tui_cmd_rx,
-            )
-            .await
-        } else {
-            anyhow::bail!("Failed to establish endpoint or connection.");
+        receiver::run_loop(connection, endpoint, target_addr, store, dst_dir).await
+    };
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            println!("User interrupt, shutting down");
         }
-    });
-
-    tokio::signal::ctrl_c().await?;
-    println!("Shutting down receiver.");
-    tui_cmd_tx.send(TuiCommand::Shutdown).await?;
-    println!("Send shutdown msg to backend, waiting for it to finish");
-    let _ = backend_handle.await?;
-    println!("It finished!");
+        _ = run_backend => {
+            println!("Connection terminated, shutting down")
+        }
+    }
 
     Ok(())
 }
