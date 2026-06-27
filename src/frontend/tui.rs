@@ -6,7 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::ui::app::App;
+use crate::frontend::app::App;
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {

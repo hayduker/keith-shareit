@@ -10,4 +10,4 @@ pub mod app;
 pub mod cli;
 pub mod log;
 pub mod tree;
-pub mod ui;
+pub mod tui;

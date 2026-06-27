@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     backend::{BackendEvent, store::KeithStore},
-    ui::TuiCommand,
+    frontend::TuiCommand,
 };
 
 #[derive(Serialize, Deserialize, Debug)]

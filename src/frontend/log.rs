@@ -1,4 +1,4 @@
-use crate::ui::app::{ActivePane, App};
+use crate::frontend::app::{ActivePane, App};
 use ratatui::{
     Frame,
     layout::{Margin, Rect},

@@ -9,14 +9,14 @@ use crate::{
         receiver, sender,
         store::KeithStore,
     },
-    ui::{
+    frontend::{
         app::App,
         cli::{Args, Commands},
     },
 };
 
 mod backend;
-mod ui;
+mod frontend;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

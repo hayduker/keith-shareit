@@ -10,7 +10,7 @@ use tui_tree_widget::TreeState;
 
 use crate::{
     backend::BackendEvent,
-    ui::{TuiCommand, log::LogState},
+    frontend::{TuiCommand, log::LogState},
 };
 
 #[derive(Debug, PartialEq)]
