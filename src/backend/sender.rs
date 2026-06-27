@@ -6,8 +6,8 @@ use std::{ffi::OsStr, path::PathBuf};
 use tokio::sync::mpsc;
 
 use crate::{
-    event::{BackendEvent, TuiCommand},
-    store::KeithStore,
+    backend::{BackendEvent, store::KeithStore},
+    ui::TuiCommand,
 };
 
 #[derive(Serialize, Deserialize, Debug)]

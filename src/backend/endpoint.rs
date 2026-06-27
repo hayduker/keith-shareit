@@ -9,7 +9,7 @@ use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use tokio::sync::mpsc;
 
-use crate::{event::BackendEvent, store::KeithStore};
+use crate::backend::{BackendEvent, store::KeithStore};
 
 const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 

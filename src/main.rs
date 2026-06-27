@@ -4,20 +4,18 @@ use anyhow::Result;
 use clap::Parser;
 
 use crate::{
-    app::App,
-    cli::{Args, Commands},
-    endpoint::{create_endpoint, establish_connection},
-    store::KeithStore,
+    backend::{
+        endpoint::{create_endpoint, establish_connection},
+        receiver, sender,
+        store::KeithStore,
+    },
+    ui::{
+        app::App,
+        cli::{Args, Commands},
+    },
 };
 
-mod app;
-mod cli;
-mod endpoint;
-mod event;
-mod log;
-mod receiver;
-mod sender;
-mod store;
+mod backend;
 mod ui;
 
 #[tokio::main]

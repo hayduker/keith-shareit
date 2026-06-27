@@ -15,8 +15,8 @@ use iroh_blobs::{
 use n0_future::StreamExt;
 
 use crate::{
+    backend::store::KeithStore,
     sender::{SyncCommand, shortened_hash},
-    store::KeithStore,
 };
 
 pub async fn run_loop(

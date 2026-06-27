@@ -9,8 +9,8 @@ use tokio::sync::mpsc;
 use tui_tree_widget::TreeState;
 
 use crate::{
-    event::{BackendEvent, TuiCommand},
-    log::LogState,
+    backend::BackendEvent,
+    ui::{TuiCommand, log::LogState},
 };
 
 #[derive(Debug, PartialEq)]

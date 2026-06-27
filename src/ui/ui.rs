@@ -9,7 +9,7 @@ use ratatui::{
 use tui_tree_widget::{Tree, TreeItem};
 use walkdir::WalkDir;
 
-use crate::app::{ActivePane, App};
+use crate::ui::app::{ActivePane, App};
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
