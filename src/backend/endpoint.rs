@@ -73,8 +73,6 @@ pub async fn establish_connection(
     log_message("Searching for peers", is_sender, event_tx).await;
 
     while let Some(event) = events.next().await {
-        log_message("Got some kinda mDNS event", is_sender, event_tx).await;
-
         match event {
             DiscoveryEvent::Discovered { endpoint_info, .. } => {
                 let target_addr = endpoint_info.into_endpoint_addr();
