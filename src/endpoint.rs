@@ -9,7 +9,7 @@ use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
 use tokio::sync::mpsc;
 
-use crate::{event::BackendEvent, secret::get_or_create_secret, store::KeithStore};
+use crate::{event::BackendEvent, store::KeithStore};
 
 const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 
@@ -18,10 +18,7 @@ pub async fn create_endpoint(
     store: &KeithStore,
     event_tx: &mpsc::Sender<BackendEvent>,
 ) -> Result<(Endpoint, MdnsAddressLookup, Option<Router>)> {
-    let secret_key = get_or_create_secret()?;
-
     let endpoint = Endpoint::builder(presets::Minimal)
-        .secret_key(secret_key)
         .alpns(vec![
             SYNC_ALPN.to_vec(),
             iroh_blobs::protocol::ALPN.to_vec(),

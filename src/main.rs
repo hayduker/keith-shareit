@@ -7,7 +7,6 @@ use crate::{
     app::App,
     cli::{Args, Commands},
     endpoint::{create_endpoint, establish_connection},
-    event::TuiCommand,
     store::KeithStore,
 };
 
@@ -17,7 +16,6 @@ mod endpoint;
 mod event;
 mod log;
 mod receiver;
-mod secret;
 mod sender;
 mod store;
 mod ui;
