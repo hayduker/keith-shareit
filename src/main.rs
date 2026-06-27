@@ -32,9 +32,8 @@ async fn run_sender(src_dir: PathBuf) -> Result<()> {
 
     tokio::spawn(async move {
         let store = KeithStore::new().await?;
-        let (endpoint, mdns, _router) = create_endpoint(true, &store, &backend_event_tx).await?;
-        let (connection, _) =
-            establish_connection(&endpoint, mdns, true, &backend_event_tx).await?;
+        let (endpoint, _router) = create_endpoint(true, &store, &backend_event_tx).await?;
+        let (connection, _) = establish_connection(&endpoint, true, &backend_event_tx).await?;
 
         sender::run_loop(connection, store, tui_cmd_rx, backend_event_tx).await
     });
@@ -52,9 +51,9 @@ async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
 
     let run_backend = async move {
         let store = KeithStore::new().await?;
-        let (endpoint, mdns, _router) = create_endpoint(false, &store, &backend_event_tx).await?;
+        let (endpoint, _router) = create_endpoint(false, &store, &backend_event_tx).await?;
         let (connection, target_addr) =
-            establish_connection(&endpoint, mdns, false, &backend_event_tx).await?;
+            establish_connection(&endpoint, false, &backend_event_tx).await?;
 
         receiver::run_loop(connection, endpoint, target_addr, store, dst_dir).await
     };
