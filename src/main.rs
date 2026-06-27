@@ -15,6 +15,7 @@ mod app;
 mod cli;
 mod endpoint;
 mod event;
+mod log;
 mod receiver;
 mod secret;
 mod sender;

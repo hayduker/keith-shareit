@@ -8,7 +8,16 @@ use ratatui::{
 use tokio::sync::mpsc;
 use tui_tree_widget::TreeState;
 
-use crate::event::{BackendEvent, TuiCommand};
+use crate::{
+    event::{BackendEvent, TuiCommand},
+    log::LogState,
+};
+
+#[derive(Debug, PartialEq)]
+pub enum ActivePane {
+    Tree,
+    Logs,
+}
 
 #[derive(Debug)]
 pub struct App {
@@ -17,7 +26,9 @@ pub struct App {
     tui_cmd_tx: mpsc::Sender<TuiCommand>,
     backend_event_rx: mpsc::Receiver<BackendEvent>,
     pub logs: Vec<String>,
+    pub log_state: LogState,
     pub src_path: PathBuf,
+    pub active_pane: ActivePane,
 }
 
 impl App {
@@ -32,7 +43,9 @@ impl App {
             tui_cmd_tx,
             backend_event_rx,
             logs: vec![],
+            log_state: LogState::default(),
             src_path,
+            active_pane: ActivePane::Tree,
         }
     }
 
@@ -86,17 +99,29 @@ impl App {
             KeyCode::Char(' ') => {
                 self.library_tree_state.toggle_selected();
             }
-            KeyCode::Down => {
-                self.library_tree_state.key_down();
-            }
-            KeyCode::Up => {
-                self.library_tree_state.key_up();
-            }
+            KeyCode::Down => match self.active_pane {
+                ActivePane::Tree => {
+                    self.library_tree_state.key_down();
+                }
+                ActivePane::Logs => self.log_state.scroll_down(),
+            },
+            KeyCode::Up => match self.active_pane {
+                ActivePane::Tree => {
+                    self.library_tree_state.key_up();
+                }
+                ActivePane::Logs => self.log_state.scroll_up(),
+            },
             KeyCode::Left => {
                 self.library_tree_state.key_left();
             }
             KeyCode::Right => {
                 self.library_tree_state.key_right();
+            }
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.active_pane = match self.active_pane {
+                    ActivePane::Tree => ActivePane::Logs,
+                    ActivePane::Logs => ActivePane::Tree,
+                };
             }
             _ => {}
         }

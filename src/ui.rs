@@ -4,31 +4,65 @@ use ratatui::{
     style::{Color, Style, Stylize},
     symbols::border,
     text::Line,
-    widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, Wrap},
+    widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation},
 };
 use tui_tree_widget::{Tree, TreeItem};
 use walkdir::WalkDir;
 
-use crate::app::App;
+use crate::app::{ActivePane, App};
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        let main_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
             .split(frame.area());
 
-        self.render_tree(frame, chunks[0]);
-        self.render_log(frame, chunks[1]);
+        let body_area = main_layout[0];
+        let footer_area = main_layout[1];
+
+        let panes = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(body_area);
+
+        self.render_tree(frame, panes[0]);
+        self.render_log_screen(frame, panes[1]);
+        self.render_help_text(frame, footer_area);
+    }
+
+    fn render_help_text(&mut self, frame: &mut Frame, area: Rect) {
+        let help_text = Line::from(vec![
+            " Navigate ".dark_gray(),
+            "<↑/↓/←/→> ".yellow(),
+            "| Transfer ".dark_gray(),
+            "<enter> ".yellow(),
+            "| Switch Pane ".dark_gray(),
+            "<tab> ".yellow(),
+            "| Quit ".dark_gray(),
+            "<q> ".yellow(),
+        ]);
+
+        let footer = Paragraph::new(help_text);
+        frame.render_widget(footer, area);
     }
 
     fn render_tree(&mut self, frame: &mut Frame, area: Rect) {
         let title = Line::from(" Library ".bold());
         let top_instructions = Line::from(vec![" Quit ".into(), "<q> ".blue().bold()]);
-        let block = Block::bordered()
-            .title(title.centered())
-            .title_top(top_instructions.right_aligned())
-            .border_set(border::THICK);
+
+        let block = match self.active_pane {
+            ActivePane::Tree => Block::bordered()
+                .title(title.centered())
+                .title_top(top_instructions.right_aligned())
+                .border_set(border::THICK)
+                .border_style(Style::default().fg(Color::Blue)),
+            ActivePane::Logs => Block::bordered()
+                .title(title.centered())
+                .title_top(top_instructions.right_aligned())
+                .border_set(border::THICK)
+                .dark_gray(),
+        };
 
         let mut root_item =
             TreeItem::new_leaf((String::new(), false), self.src_path.display().to_string());
@@ -107,28 +141,5 @@ impl App {
             .block(block);
 
         frame.render_stateful_widget(tree, area, &mut self.library_tree_state);
-    }
-
-    fn render_log(&mut self, frame: &mut Frame, area: Rect) {
-        let title = Line::from(" Log ").bold().magenta();
-        let block = Block::bordered()
-            .title(title.centered())
-            .border_set(border::THICK);
-
-        let lines: Vec<Line> = self
-            .logs
-            .iter()
-            .map(|log_str| Line::from(log_str.clone().dark_gray()))
-            .collect();
-
-        let available_height = area.height as usize;
-        let vertical_scroll = lines.len().saturating_sub(available_height - 2);
-
-        let paragraph = Paragraph::new(lines)
-            .block(block)
-            .scroll((vertical_scroll as u16, 0))
-            .wrap(Wrap { trim: true });
-
-        frame.render_widget(paragraph, area);
     }
 }
