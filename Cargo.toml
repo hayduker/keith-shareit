@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
+bytes = "1.12.0"
 clap = { version = "4.6.1", features = ["derive"] }
 data-encoding = "2.11.0"
 futures-buffered = "0.2.13"
@@ -18,5 +19,7 @@ rand = "0.10.1"
 ratatui = "0.30.2"
 serde = "1.0.228"
 tokio = { version = "1.52.3", features = ["signal"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tui-tree-widget = "0.24.0"
 walkdir = "2.5.0"

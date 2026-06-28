@@ -38,7 +38,7 @@ pub async fn run_loop(
 
         tokio::select! {
             _ = connection.closed() => {
-                event_tx.send(BackendEvent::StatusUpdate("Receiver disconnected, shutting down".into())).await.ok();
+                event_tx.send(BackendEvent::StatusUpdate("Receiver disconnected, feel free to quit".into())).await.ok();
                 break;
             }
             cmd = command_rx.recv() => {
@@ -63,7 +63,7 @@ pub async fn run_loop(
     }
 
     active_tags.clear();
-    connection.close(0u8.into(), b"shutdown");
+    connection.close(0u8.into(), b"graceful shutdown");
 
     Ok(())
 }

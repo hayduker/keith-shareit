@@ -2379,6 +2379,7 @@ name = "keith-shareit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "data-encoding",
  "futures-buffered",
@@ -2392,6 +2393,8 @@ dependencies = [
  "ratatui",
  "serde",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "tui-tree-widget",
  "walkdir",
 ]

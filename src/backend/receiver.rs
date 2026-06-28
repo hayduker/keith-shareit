@@ -4,18 +4,21 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use iroh::{
     Endpoint, EndpointAddr,
-    endpoint::{Connection, RecvStream},
+    endpoint::{Connection, ConnectionError, RecvStream},
 };
 use iroh_blobs::{
     api::remote::GetProgressItem, format::collection::Collection,
     get::request::get_hash_seq_and_sizes,
 };
 use n0_future::StreamExt;
+use tokio::sync::mpsc::Receiver;
 
 use crate::{
     backend::store::KeithStore,
+    frontend::TuiCommand,
     sender::{SyncCommand, shortened_hash},
 };
 
@@ -25,14 +28,28 @@ pub async fn run_loop(
     target_addr: EndpointAddr,
     store: KeithStore,
     dst_dir: PathBuf,
+    mut command_rx: Receiver<TuiCommand>,
 ) -> Result<()> {
     loop {
         println!("\nReceiver awaiting next incoming sync commands");
 
         tokio::select! {
             _ = connection.closed() => {
-                println!("Sender disconnected, shutting down");
+                println!("Sender disconnected, feel free to quit");
                 return Ok(());
+            }
+            cmd = command_rx.recv() => {
+                println!("Got command");
+
+                match cmd {
+                    Some(TuiCommand::Shutdown) | None => {
+                        println!("Got Shutdown command from ui");
+                        break
+                    }
+                    _ => {
+                        anyhow::bail!("Receiver got unsupported TuiCommand: {:?}", cmd);
+                    }
+                }
             }
             stream_result = connection.accept_uni() => {
                 match stream_result {
@@ -40,22 +57,26 @@ pub async fn run_loop(
                         match read_command_from_stream(&mut recv_stream).await {
                             Ok(command) => {
                                 println!("Received sync command for hash: {}", shortened_hash(&command.hash_and_format.hash));
-                                // println!("  HashAndFormat: {}", command.hash_and_format);
-                                // println!("  Path: {:?}", command.path);
-
                                 download_blob(&endpoint, &store, &target_addr, command, dst_dir.clone()).await?;
                             }
                             Err(e) => eprintln!("Failed to parse incoming stream data: {:?}", e),
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error accepting unidirectional stream: {:?}", e);
-                        break;
+                        if let ConnectionError::ApplicationClosed(close) = e.clone() &&
+                            close.error_code.into_inner() == 0 &&
+                            close.reason == Bytes::from_static(b"graceful shutdown") {
+                            println!("Sender disconnected, feel free to quit");
+                            break;
+                        }
+                        anyhow::bail!("Error accepting unidirectional stream: {:?}", e);
                     }
                 }
             }
         }
     }
+
+    connection.close(0u8.into(), b"shutdown");
 
     Ok(())
 }

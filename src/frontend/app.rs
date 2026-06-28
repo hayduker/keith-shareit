@@ -128,7 +128,6 @@ impl App {
     }
 
     fn exit(&mut self) {
-        let _ = self.tui_cmd_tx.try_send(TuiCommand::Shutdown);
         self.should_exit = true;
     }
 }

@@ -7,9 +7,12 @@ use iroh::{
 use iroh_blobs::BlobsProtocol;
 use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
 use n0_future::StreamExt;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Receiver};
 
-use crate::backend::{BackendEvent, secret::get_or_create_secret, store::KeithStore};
+use crate::{
+    backend::{BackendEvent, secret::get_or_create_secret, store::KeithStore},
+    frontend::TuiCommand,
+};
 
 const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 
@@ -54,8 +57,12 @@ pub async fn establish_connection(
     endpoint: &Endpoint,
     is_sender: bool,
     event_tx: &mpsc::Sender<BackendEvent>,
-) -> Result<(Connection, EndpointAddr)> {
-    let mdns = MdnsAddressLookup::builder().build(endpoint.id()).unwrap();
+    command_rx: &mut Receiver<TuiCommand>,
+) -> Result<Option<(Connection, EndpointAddr)>> {
+    let mdns = MdnsAddressLookup::builder()
+        .advertise(true)
+        .build(endpoint.id())?;
+
     endpoint.address_lookup().unwrap().add(mdns.clone());
 
     log_message(
@@ -72,49 +79,73 @@ pub async fn establish_connection(
 
     log_message("Searching for peers", is_sender, event_tx).await;
 
-    while let Some(event) = events.next().await {
-        match event {
-            DiscoveryEvent::Discovered { endpoint_info, .. } => {
-                let target_addr = endpoint_info.into_endpoint_addr();
+    let discovery_loop = async {
+        let mut result: Result<Option<(Connection, EndpointAddr)>> = Ok(None);
 
-                log_message(
-                    &format!(
-                        "Discovered endpoint with id: {}",
-                        shortened_id(&target_addr.id)
-                    ),
-                    is_sender,
-                    event_tx,
-                )
-                .await;
+        while let Some(event) = events.next().await {
+            match event {
+                DiscoveryEvent::Discovered { endpoint_info, .. } => {
+                    let target_addr = endpoint_info.into_endpoint_addr();
 
-                let connection = if is_sender {
-                    endpoint.connect(target_addr.clone(), SYNC_ALPN).await?
-                } else {
-                    endpoint
-                        .accept()
-                        .await
-                        .context("no incoming connection")?
-                        .await
-                        .context("accept connection")?
-                };
+                    log_message(
+                        &format!(
+                            "Discovered endpoint with id: {}",
+                            shortened_id(&target_addr.id)
+                        ),
+                        is_sender,
+                        event_tx,
+                    )
+                    .await;
 
-                event_tx.send(BackendEvent::ConnectionSecured).await.ok();
+                    let connection = if is_sender {
+                        endpoint.connect(target_addr.clone(), SYNC_ALPN).await?
+                    } else {
+                        endpoint
+                            .accept()
+                            .await
+                            .context("no incoming connection")?
+                            .await
+                            .context("accept connection")?
+                    };
 
-                return Ok((connection, target_addr));
+                    event_tx.send(BackendEvent::ConnectionSecured).await.ok();
+
+                    result = Ok(Some((connection, target_addr)));
+
+                    break;
+                }
+                DiscoveryEvent::Expired { endpoint_id } => {
+                    log_message(
+                        &format!("Endpoint id expired: {}", shortened_id(&endpoint_id)),
+                        is_sender,
+                        event_tx,
+                    )
+                    .await;
+                }
+                _ => {}
             }
-            DiscoveryEvent::Expired { endpoint_id } => {
-                log_message(
-                    &format!("Endpoint id expired: {}", shortened_id(&endpoint_id)),
-                    is_sender,
-                    event_tx,
-                )
-                .await;
+        }
+
+        if let Ok(None) = result {
+            anyhow::bail!("mDNS discovery stream ended without finding a peer");
+        }
+
+        result
+    };
+
+    tokio::select! {
+        result = discovery_loop => result,
+        cmd = command_rx.recv() => {
+            match cmd {
+                Some(TuiCommand::Shutdown) | None => {
+                    Ok(None)
+                }
+                _ => {
+                    anyhow::bail!("Got unsupported TuiCommand during peer discovery: {:?}", cmd);
+                }
             }
-            _ => {}
         }
     }
-
-    anyhow::bail!("mDNS discovery stream ended without finding a peer");
 }
 
 async fn log_message(msg: &str, is_sender: bool, event_tx: &mpsc::Sender<BackendEvent>) {
