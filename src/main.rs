@@ -21,14 +21,14 @@ mod frontend;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // let log_file = File::create("iroh_debug.log")?;
-    // let file_layer = fmt::layer().with_writer(log_file).with_ansi(false);
-    // let filter_layer =
-    //     EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("iroh=trace,info"));
-    // tracing_subscriber::registry()
-    //     .with(filter_layer)
-    //     .with(file_layer)
-    //     .init();
+    let log_file = File::create("iroh_debug.log")?;
+    let file_layer = fmt::layer().with_writer(log_file).with_ansi(false);
+    let filter_layer =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("iroh=debug,info"));
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(file_layer)
+        .init();
 
     match Args::parse().command {
         Commands::Send(args) => run_sender(args.src_dir).await,
