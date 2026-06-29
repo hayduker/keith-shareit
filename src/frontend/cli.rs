@@ -5,6 +5,10 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(version, about)]
 pub struct Args {
+    /// Enable trace-level logging, output to keith.log
+    #[clap(long)]
+    pub with_trace: bool,
+
     #[clap(subcommand)]
     pub command: Commands,
 }

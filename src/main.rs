@@ -21,16 +21,13 @@ mod frontend;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let log_file = File::create("iroh_debug.log")?;
-    let file_layer = fmt::layer().with_writer(log_file).with_ansi(false);
-    let filter_layer =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("iroh=trace,info"));
-    tracing_subscriber::registry()
-        .with(filter_layer)
-        .with(file_layer)
-        .init();
+    let args = Args::parse();
 
-    match Args::parse().command {
+    if args.with_trace {
+        init_log()?;
+    }
+
+    match args.command {
         Commands::Send(args) => run_sender(args.src_dir).await,
         Commands::Receive(args) => run_receiver(args.dst_dir).await,
     }
@@ -101,6 +98,19 @@ async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
     }
 
     let _ = backend_handle.await?;
+
+    Ok(())
+}
+
+fn init_log() -> Result<()> {
+    let log_file = File::create("keith.log")?;
+    let file_layer = fmt::layer().with_writer(log_file).with_ansi(false);
+    let filter_layer =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("iroh=trace,info"));
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(file_layer)
+        .init();
 
     Ok(())
 }
