@@ -8,6 +8,7 @@ use crate::{
         endpoint::{create_endpoint, establish_connection},
         receiver, sender,
         store::KeithStore,
+        ticket::establish_ticket_connection,
     },
     frontend::{
         TuiCommand,
@@ -41,7 +42,7 @@ async fn run_sender(src_dir: PathBuf) -> Result<()> {
         let store = KeithStore::new().await?;
         let (endpoint, _router) = create_endpoint(true, &store, &backend_event_tx).await?;
         if let Some((connection, _)) =
-            establish_connection(&endpoint, true, &backend_event_tx, &mut tui_cmd_rx).await?
+            establish_ticket_connection(&endpoint, true, &backend_event_tx, &mut tui_cmd_rx).await?
         {
             sender::run_loop(connection, store, tui_cmd_rx, backend_event_tx).await?;
         }
@@ -73,7 +74,8 @@ async fn run_receiver(dst_dir: PathBuf) -> Result<()> {
         let store = KeithStore::new().await?;
         let (endpoint, _router) = create_endpoint(false, &store, &backend_event_tx).await?;
         if let Some((connection, target_addr)) =
-            establish_connection(&endpoint, false, &backend_event_tx, &mut tui_cmd_rx).await?
+            establish_ticket_connection(&endpoint, false, &backend_event_tx, &mut tui_cmd_rx)
+                .await?
         {
             receiver::run_loop(
                 connection,

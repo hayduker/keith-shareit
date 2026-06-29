@@ -1,15 +1,13 @@
-use std::{
-    fs,
-    net::{SocketAddr, SocketAddrV4},
-};
+use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use iroh::{
-    Endpoint, EndpointAddr, EndpointId, TransportAddr,
+    Endpoint, EndpointAddr, EndpointId,
     endpoint::{Connection, presets},
     protocol::Router,
 };
 use iroh_blobs::BlobsProtocol;
+use iroh_tickets::endpoint::EndpointTicket;
 use tokio::sync::mpsc::{self, Receiver};
 
 use crate::{
@@ -19,13 +17,12 @@ use crate::{
 
 const SYNC_ALPN: &[u8] = b"keith-shareit/1";
 
-pub async fn create_direct_endpoint(
+pub async fn create_endpoint(
     is_sender: bool,
     store: &KeithStore,
     event_tx: &mpsc::Sender<BackendEvent>,
 ) -> Result<(Endpoint, Option<Router>)> {
     let secret_key = get_or_create_secret()?;
-    let addr = fs::read_to_string("endpoint.addr")?;
 
     let endpoint = Endpoint::builder(presets::Minimal)
         .secret_key(secret_key)
@@ -33,22 +30,11 @@ pub async fn create_direct_endpoint(
             SYNC_ALPN.to_vec(),
             iroh_blobs::protocol::ALPN.to_vec(),
         ])
-        .bind_addr(addr)?
         .bind()
         .await?;
 
     log_message(
         &format!("Endpoint created with id: {}", shortened_id(&endpoint.id())),
-        is_sender,
-        event_tx,
-    )
-    .await;
-
-    log_message(
-        &format!(
-            "Bound to address: {:?}",
-            endpoint.addr().addrs.iter().next().unwrap()
-        ),
         is_sender,
         event_tx,
     )
@@ -65,51 +51,75 @@ pub async fn create_direct_endpoint(
         None
     };
 
-    log_message("Created router", is_sender, event_tx).await;
-
     Ok((endpoint, router))
 }
 
-pub async fn establish_direct_connection(
+pub async fn establish_ticket_connection(
     endpoint: &Endpoint,
     is_sender: bool,
     event_tx: &mpsc::Sender<BackendEvent>,
     command_rx: &mut Receiver<TuiCommand>,
 ) -> Result<Option<(Connection, EndpointAddr)>> {
-    let target_addr = {
-        let target_id = {
-            let bytes = fs::read("other.id")?;
-            EndpointId::from_bytes(bytes.as_array::<32>().unwrap())?
-        };
+    let ticket = EndpointTicket::new(endpoint.addr());
+    log_message(&format!("Ticket: {ticket}"), is_sender, event_tx).await;
 
-        let target_ip = {
-            let addr_string = fs::read_to_string("other.addr")?;
-            let with_port: SocketAddrV4 = addr_string.parse()?; //.expect("failed to parse socket addr v4");
-            TransportAddr::Ip(SocketAddr::V4(with_port))
-        };
+    let ticket_str = if is_sender {
+        event_tx.send(BackendEvent::TicketRequest).await.ok();
 
-        EndpointAddr::from_parts(target_id, vec![target_ip])
+        match command_rx.recv().await {
+            Some(TuiCommand::TicketInput(t)) => t,
+            Some(TuiCommand::Shutdown) => {
+                log_message("Got Shutdown waiting for user input", is_sender, event_tx).await;
+                return Ok(None);
+            }
+            _ => {
+                log_message(
+                    "Got invalid command waiting for user input",
+                    is_sender,
+                    event_tx,
+                )
+                .await;
+                return Ok(None);
+            }
+        }
+    } else {
+        let mut buffer = String::new();
+        log_message("Enter peer's ticket: ", is_sender, event_tx).await;
+        std::io::stdin().read_line(&mut buffer)?;
+
+        buffer
     };
 
     log_message(
-        &format!("Got target id: {:?}", shortened_id(&target_addr.id)),
+        &format!("Got ticket from user input: {}", ticket_str),
         is_sender,
         event_tx,
     )
     .await;
 
+    let target_ticket = EndpointTicket::from_str(&ticket_str)?;
+
     log_message(
-        &format!("Got target addr: {:?}", target_addr.addrs),
+        &format!("Parsed ticket: {}", target_ticket),
+        is_sender,
+        event_tx,
+    )
+    .await;
+
+    let target_addr = target_ticket.endpoint_addr().clone();
+
+    log_message(
+        &format!("Got address out of ticket: {:?}", target_addr),
         is_sender,
         event_tx,
     )
     .await;
 
     let connection = if is_sender {
-        log_message("Attempting connection to target", is_sender, event_tx).await;
+        log_message("Initiating connection", is_sender, event_tx).await;
         endpoint.connect(target_addr.clone(), SYNC_ALPN).await?
     } else {
-        println!("Attempting to accept connection");
+        log_message("Trying to accept connection", is_sender, event_tx).await;
         endpoint
             .accept()
             .await
@@ -118,7 +128,7 @@ pub async fn establish_direct_connection(
             .context("accept connection")?
     };
 
-    log_message("Connection established", is_sender, event_tx).await;
+    log_message("Connection successful!", is_sender, event_tx).await;
 
     event_tx.send(BackendEvent::ConnectionSecured).await.ok();
 

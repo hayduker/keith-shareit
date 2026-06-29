@@ -92,11 +92,25 @@ impl App {
         // update viewport height
         self.log_state.viewport_height = inner_area.height as usize;
 
+        let first_width = (inner_area.width as usize).saturating_sub(0);
+        let cont_width = (inner_area.width as usize).saturating_sub(2);
+
         // build entries from messages and wrap long lines
         let entries = self
             .logs
             .iter()
-            .map(|msg| vec![Line::from(vec![Span::raw(msg)])])
+            .map(|msg| {
+                let wrapped = word_wrap(&msg, first_width, cont_width);
+                let first = wrapped.first().cloned().unwrap_or_default();
+
+                let mut lines = vec![Line::from(vec![Span::raw(first)])];
+
+                for chunk in wrapped.into_iter().skip(1) {
+                    lines.push(Line::from(vec![Span::raw(chunk)]));
+                }
+
+                lines
+            })
             .collect::<Vec<_>>();
 
         // count total height of all entries
@@ -169,4 +183,58 @@ impl App {
             &mut self.log_state.scrollbar_state,
         );
     }
+}
+
+fn word_wrap(text: &str, first_width: usize, cont_width: usize) -> Vec<String> {
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+
+    for word in text.split_whitespace() {
+        let width = if lines.is_empty() {
+            first_width
+        } else {
+            cont_width
+        };
+        let sep = if current.is_empty() { 0 } else { 1 };
+        if current.chars().count() + sep + word.chars().count() <= width {
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+        } else {
+            if !current.is_empty() {
+                lines.push(std::mem::take(&mut current));
+            }
+
+            let mut remaining = word;
+            loop {
+                let width = if lines.is_empty() {
+                    first_width
+                } else {
+                    cont_width
+                };
+                if remaining.chars().count() <= width {
+                    break;
+                }
+                let split = remaining
+                    .char_indices()
+                    .nth(width)
+                    .map(|(i, _)| i)
+                    .unwrap_or(remaining.len());
+                lines.push(remaining[..split].to_string());
+                remaining = &remaining[split..];
+            }
+            current.push_str(remaining);
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    lines
 }

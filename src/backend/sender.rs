@@ -57,6 +57,7 @@ pub async fn run_loop(
                         event_tx.send(BackendEvent::StatusUpdate("Backend shutting down".into())).await.ok();
                         break;
                     }
+                    _ => {}
                 }
             }
         }

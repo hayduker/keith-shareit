@@ -5,6 +5,7 @@ pub enum BackendEvent {
     _DownloadStarted,
     _DownloadComplete,
     StatusUpdate(String),
+    TicketRequest,
 }
 
 pub mod direct;
@@ -13,3 +14,4 @@ pub mod receiver;
 pub mod secret;
 pub mod sender;
 pub mod store;
+pub mod ticket;

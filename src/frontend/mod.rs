@@ -3,6 +3,7 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub enum TuiCommand {
     SyncPath(PathBuf, PathBuf),
+    TicketInput(String),
     Shutdown,
 }
 
