@@ -7,6 +7,7 @@ pub enum BackendEvent {
     StatusUpdate(String),
 }
 
+pub mod direct;
 pub mod endpoint;
 pub mod receiver;
 pub mod secret;
