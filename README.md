@@ -6,7 +6,7 @@ A peer-to-peer media sharing library designed to facilitate selective file trans
 
 * **Peer-to-Peer Connectivity**: Connections between devices are peer-to-peer, thanks to the Iroh ecosystem. By default, `keith-shareit` supports automatic peer discovery and connection using mDNS when devices are on the same LAN. Iroh's ticketing system can also be used to connections across broader networks.
 * **Desktop TUI**: On the desktop (the media sender), you will be presented with TUI with an interactive file tree for selective choosing and sending files or directories, as well as a log pane.
-* **Phone Logger**: On the phone, the application will simply run passively and log its state as files are transferred.
+* **Phone Logger**: On the phone (the receiver), the application will simply run passively and log its state as files are transferred.
 
 ## Installation
 
